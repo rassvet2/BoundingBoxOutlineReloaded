@@ -21,6 +21,7 @@ import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.command.CommandSource;
+import net.minecraft.server.command.CommandOutput;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.ClickEvent;
@@ -47,7 +48,7 @@ public class ClientInterop {
             ClientPlayNetworkHandler connection = MinecraftClient.getInstance().getNetworkHandler();
             if (connection != null) {
                 CommandDispatcher<CommandSource> commandDispatcher = connection.getCommandDispatcher();
-                ServerCommandSource commandSource = MinecraftClient.getInstance().player.getServer().getCommandSource();
+                ServerCommandSource commandSource = getServerCommandSource();
                 try {
                     commandDispatcher.execute(message, commandSource);
                 } catch (CommandSyntaxException exception) {
@@ -138,5 +139,34 @@ public class ClientInterop {
 
     public static long getGameTime() {
         return MinecraftClient.getInstance().world.getTime();
+    }
+
+    public static ServerCommandSource getServerCommandSource() {
+        ClientPlayerEntity player = MinecraftClient.getInstance().player;
+        if (player == null) {
+            throw new IllegalStateException("Player is null");
+        }
+        CommandOutput playerCommandOutput = new CommandOutput() {
+            @Override
+            public void sendMessage(Text message) {
+                player.sendMessage(message, false);
+            }
+
+            @Override
+            public boolean shouldReceiveFeedback() {
+                return true;
+            }
+
+            @Override
+            public boolean shouldTrackOutput() {
+                return true;
+            }
+
+            @Override
+            public boolean shouldBroadcastConsoleToOps() {
+                return false;
+            }
+        };
+        return new ServerCommandSource(playerCommandOutput, player.getPos(), player.getRotationClient(), player.getWorld() instanceof ServerWorld ? (ServerWorld) player.getWorld() : null, player.getPermissionLevel(), player.getName().getString(), player.getDisplayName(), player.getServer(), player);
     }
 }
