@@ -105,10 +105,10 @@ public class ServuxStructurePackets {
         Structure structure = null;
         try {
             final Optional<Registry<Structure>> networkStructures = world.getRegistryManager().getOptional(RegistryKeys.STRUCTURE);
-            if (networkStructures.isPresent()) structure = networkStructures.get().getOrEmpty(Identifier.tryParse(structureId)).orElse(null);
+            if (networkStructures.isPresent()) structure = networkStructures.get().get(Identifier.tryParse(structureId));
             if (structure == null) {
                 final Optional<? extends Registry<Structure>> dynamicStructures = RegistryUtil.REGISTRY_MANAGER.getOptional(RegistryKeys.STRUCTURE);
-                if (dynamicStructures.isPresent()) structure = dynamicStructures.get().getOrEmpty(Identifier.tryParse(structureId)).orElse(null);
+                if (dynamicStructures.isPresent()) structure = dynamicStructures.get().get(Identifier.tryParse(structureId));
             }
         } catch (Throwable t) {
             t.printStackTrace(System.err);

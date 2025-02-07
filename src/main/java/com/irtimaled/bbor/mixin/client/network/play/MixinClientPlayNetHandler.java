@@ -64,6 +64,7 @@ public class MixinClientPlayNetHandler {
                     }
                 }
                 ci.cancel();
+            /* disable temp
             } else if (payload.id().toString().equals("servux:structures")) {
                 PacketByteBuf data = null;
                 try {
@@ -78,6 +79,7 @@ public class MixinClientPlayNetHandler {
                     }
                     // ci.cancel();
                 }
+                */
             }
         }
     }

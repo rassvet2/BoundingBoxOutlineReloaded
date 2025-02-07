@@ -47,7 +47,7 @@ public class CommonInterop {
     public static void chunkLoaded(WorldChunk chunk) {
         DimensionId dimensionId = DimensionId.from(chunk.getWorld().getRegistryKey());
         Map<String, StructureStart> structures = new HashMap<>();
-        final Registry<Structure> structureFeatureRegistry = chunk.getWorld().getRegistryManager().get(RegistryKeys.STRUCTURE);
+        final Registry<Structure> structureFeatureRegistry = chunk.getWorld().getRegistryManager().getOrThrow(RegistryKeys.STRUCTURE);
         for (var es : chunk.getStructureStarts().entrySet()) {
             final Optional<RegistryKey<Structure>> optional = structureFeatureRegistry.getKey(es.getKey());
             optional.ifPresent(key -> structures.put(key.getValue().toString(), es.getValue()));
@@ -63,7 +63,7 @@ public class CommonInterop {
 
     public static void loadServerStructures(MinecraftServer server) {
         try {
-            final Registry<Structure> structureFeatureRegistry = server.getRegistryManager().get(RegistryKeys.STRUCTURE);
+            final Registry<Structure> structureFeatureRegistry = server.getRegistryManager().getOrThrow(RegistryKeys.STRUCTURE);
             loadStructuresFromRegistry(structureFeatureRegistry);
         } catch (Throwable t) {
             t.printStackTrace();
@@ -81,7 +81,7 @@ public class CommonInterop {
     }
 
     public static void loadStructuresInitial() {
-        final List<RegistryEntry.Reference<Structure>> references = BuiltinRegistries.createWrapperLookup().getWrapperOrThrow(RegistryKeys.STRUCTURE).streamEntries().toList();
+        final List<RegistryEntry.Reference<Structure>> references = BuiltinRegistries.createWrapperLookup().getOrThrow(RegistryKeys.STRUCTURE).streamEntries().toList();
         System.out.println("Registring structures: " + Arrays.toString(references.stream().map(entry -> entry.getKey().get().getValue().toString()).distinct().toArray(String[]::new)));
         for (var entry : references) {
             final Identifier value = entry.getKey().get().getValue();

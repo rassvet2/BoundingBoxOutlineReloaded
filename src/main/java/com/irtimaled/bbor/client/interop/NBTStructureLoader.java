@@ -80,7 +80,7 @@ class NBTStructureLoader {
         if (this.legacyStructureDataUtil == null) {
             Path dataFolder = this.saveHandler.getWorldDirectory(World.OVERWORLD).resolve("data");
             this.legacyStructureDataUtil = FeatureUpdater.create(dimensionId.getDimensionType(),
-                    new PersistentStateManager(dataFolder.toFile(), MinecraftClient.getInstance().getDataFixer(), MinecraftClient.getInstance().world.getRegistryManager()));
+                    new PersistentStateManager(dataFolder, MinecraftClient.getInstance().getDataFixer(), MinecraftClient.getInstance().world.getRegistryManager()));
         }
         return this.legacyStructureDataUtil;
     }

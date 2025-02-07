@@ -22,6 +22,7 @@ import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.command.CommandSource;
 import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.ClickEvent;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
@@ -46,7 +47,7 @@ public class ClientInterop {
             ClientPlayNetworkHandler connection = MinecraftClient.getInstance().getNetworkHandler();
             if (connection != null) {
                 CommandDispatcher<CommandSource> commandDispatcher = connection.getCommandDispatcher();
-                ServerCommandSource commandSource = MinecraftClient.getInstance().player.getCommandSource();
+                ServerCommandSource commandSource = MinecraftClient.getInstance().player.getServer().getCommandSource();
                 try {
                     commandDispatcher.execute(message, commandSource);
                 } catch (CommandSyntaxException exception) {

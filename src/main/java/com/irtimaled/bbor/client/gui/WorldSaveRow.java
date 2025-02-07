@@ -5,6 +5,7 @@ import com.irtimaled.bbor.client.interop.ClientInterop;
 import com.irtimaled.bbor.client.renderers.RenderHelper;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.nbt.NbtIo;
@@ -135,7 +136,7 @@ public class WorldSaveRow extends ControlListEntry implements Comparable<WorldSa
         ctx.drawText(this.client.textRenderer, details, (int) (x + ICON_SIZE + 3), (int) (y + 1 + this.client.textRenderer.fontHeight + 1), 8421504, false);
 //        this.client.getTextureManager().bindTexture(this.icon != null ? this.iconLocation : ICON_MISSING);
         RenderHelper.enableBlend();
-        ctx.drawTexture(this.icon != null ? this.iconLocation : ICON_MISSING, x, y, 0.0F, 0.0F, ICON_SIZE, ICON_SIZE, 32, 32);
+        ctx.drawTexture(RenderLayer::getGuiTextured, this.icon != null ? this.iconLocation : ICON_MISSING, x, y, 0.0F, 0.0F, ICON_SIZE, ICON_SIZE, 32, 32);
         RenderHelper.disableBlend();
     }
 

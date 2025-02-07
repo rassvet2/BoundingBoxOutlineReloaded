@@ -54,7 +54,7 @@ public class BiomeBorderHelper {
 ////        }
 //        final RegistryEntry<Biome> biome = world.getBiomeAccess().withSource(chunk).getBiome(pos);
 //        return world.getRegistryManager().get(RegistryKeys.BIOME).getRawId(biome.value());
-        return world.getRegistryManager().get(RegistryKeys.BIOME).getRawId(world.getBiome(pos).value());
+        return world.getRegistryManager().getOrThrow(RegistryKeys.BIOME).getRawId(world.getBiome(pos).value());
     }
 
     private static Long2IntMap createNewMap() {

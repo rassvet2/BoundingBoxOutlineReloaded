@@ -3,6 +3,8 @@ package com.irtimaled.bbor.client.renderers;
 import com.irtimaled.bbor.client.Camera;
 import com.irtimaled.bbor.client.models.Point;
 import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.client.gl.GlUsage;
+import net.minecraft.client.gl.ShaderProgramKeys;
 import net.minecraft.client.gl.VertexBuffer;
 import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.BuiltBuffer;
@@ -33,11 +35,11 @@ public class RenderingContext {
     private BufferBuilder lineBufferBuilder;
 
     private boolean isFreshBuffers = true;
-    private VertexBuffer quadBufferNonMaskedUploaded = new VertexBuffer(VertexBuffer.Usage.DYNAMIC);
+    private VertexBuffer quadBufferNonMaskedUploaded = new VertexBuffer(GlUsage.DYNAMIC_WRITE);
     private boolean quadBufferNonMaskedUploadedEmpty = true;
-    private VertexBuffer quadBufferMaskedUploaded = new VertexBuffer(VertexBuffer.Usage.DYNAMIC);
+    private VertexBuffer quadBufferMaskedUploaded = new VertexBuffer(GlUsage.DYNAMIC_WRITE);
     private boolean quadBufferMaskedUploadedEmpty = true;
-    private VertexBuffer lineBufferUploaded = new VertexBuffer(VertexBuffer.Usage.DYNAMIC);
+    private VertexBuffer lineBufferUploaded = new VertexBuffer(GlUsage.DYNAMIC_WRITE);
     private boolean lineBufferUploadedEmpty = true;
 
     private long quadNonMaskedCount;
@@ -72,9 +74,9 @@ public class RenderingContext {
             this.lineBufferUploaded.close();
             this.quadBufferMaskedUploaded.close();
             this.quadBufferNonMaskedUploaded.close();
-            this.lineBufferUploaded = new VertexBuffer(VertexBuffer.Usage.DYNAMIC);
-            this.quadBufferMaskedUploaded = new VertexBuffer(VertexBuffer.Usage.DYNAMIC);
-            this.quadBufferNonMaskedUploaded = new VertexBuffer(VertexBuffer.Usage.DYNAMIC);
+            this.lineBufferUploaded = new VertexBuffer(GlUsage.DYNAMIC_WRITE);
+            this.quadBufferMaskedUploaded = new VertexBuffer(GlUsage.DYNAMIC_WRITE);
+            this.quadBufferNonMaskedUploaded = new VertexBuffer(GlUsage.DYNAMIC_WRITE);
         }
     }
 
@@ -258,17 +260,17 @@ public class RenderingContext {
         RenderSystem.depthMask(true);
         if (!lineBufferUploadedEmpty) {
             lineBufferUploaded.bind();
-            lineBufferUploaded.draw(top.getPositionMatrix(), RenderSystem.getProjectionMatrix(), GameRenderer.getPositionColorProgram());
+            lineBufferUploaded.draw(top.getPositionMatrix(), RenderSystem.getProjectionMatrix(), RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR));
         }
         if (!quadBufferMaskedUploadedEmpty) {
             quadBufferMaskedUploaded.bind();
-            quadBufferMaskedUploaded.draw(top.getPositionMatrix(), RenderSystem.getProjectionMatrix(), GameRenderer.getPositionColorProgram());
+            quadBufferMaskedUploaded.draw(top.getPositionMatrix(), RenderSystem.getProjectionMatrix(), RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR));
         }
 
         RenderSystem.depthMask(false);
         if (!quadBufferNonMaskedUploadedEmpty) {
             quadBufferNonMaskedUploaded.bind();
-            quadBufferNonMaskedUploaded.draw(top.getPositionMatrix(), RenderSystem.getProjectionMatrix(), GameRenderer.getPositionColorProgram());
+            quadBufferNonMaskedUploaded.draw(top.getPositionMatrix(), RenderSystem.getProjectionMatrix(), RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR));
         }
 
         VertexBuffer.unbind();

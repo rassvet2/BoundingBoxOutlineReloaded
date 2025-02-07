@@ -20,7 +20,7 @@ public class MixinClientPlayNetworkHandler {
     }
 
     @Inject(method = "readLightData", at = @At("RETURN"))
-    private void onLightingUpdate(int x, int z, LightData data, CallbackInfo ci) {
+    private void onLightingUpdate(int x, int z, LightData data, boolean bl, CallbackInfo ci) {
         ClientWorldUpdateTracker.onLightingUpdate(x, z);
     }
 

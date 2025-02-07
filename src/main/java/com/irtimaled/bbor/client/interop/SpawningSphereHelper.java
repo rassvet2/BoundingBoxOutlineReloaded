@@ -21,7 +21,7 @@ public class SpawningSphereHelper {
         World world = MinecraftClient.getInstance().world;
         int blockY = coords.getY();
         int minY = Math.max(world.getBottomY() + 1, blockY - height);
-        int maxY = Math.min(world.getTopY() - 1, blockY + height);
+        int maxY = Math.min(world.getTopYInclusive() - 1, blockY + height);
 
         for (int x = minX; x < maxX; x++) {
             for (int z = minZ; z < maxZ; z++) {

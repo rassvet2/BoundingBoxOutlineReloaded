@@ -3,6 +3,7 @@ package com.irtimaled.bbor.client.gui;
 import com.irtimaled.bbor.common.MathHelper;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.sound.SoundManager;
 import net.minecraft.util.Identifier;
 
@@ -32,8 +33,8 @@ abstract class AbstractSlider extends AbstractControl {
 
     @Override
     protected void renderBackground(DrawContext ctx) {
-        ctx.drawGuiTexture(this.getTexture(), this.getX(), this.getY(), this.getWidth(), this.getHeight());
-        ctx.drawGuiTexture(this.getHandleTexture(), this.getX() + (int) getProgressPercentage(), this.getY(), 8, this.getHeight());
+        ctx.drawGuiTexture(RenderLayer::getGuiTextured, this.getTexture(), this.getX(), this.getY(), this.getWidth(), this.getHeight());
+        ctx.drawGuiTexture(RenderLayer::getGuiTextured, this.getHandleTexture(), this.getX() + (int) getProgressPercentage(), this.getY(), 8, this.getHeight());
     }
 
     private double getProgressPercentage() {
