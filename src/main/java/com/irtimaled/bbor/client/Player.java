@@ -4,6 +4,8 @@ import com.irtimaled.bbor.client.models.Point;
 import com.irtimaled.bbor.common.models.Coords;
 import com.irtimaled.bbor.common.models.DimensionId;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.entity.TrackedPosition;
+import net.minecraft.util.math.Vec3d;
 
 public class Player {
     private static double x;
@@ -13,9 +15,11 @@ public class Player {
     private static DimensionId dimensionId;
 
     public static void setPosition(double partialTicks, ClientPlayerEntity player) {
-        x = player.prevX + (player.getX() - player.prevX) * partialTicks;
-        y = player.prevY + (player.getY() - player.prevY) * partialTicks;
-        z = player.prevZ + (player.getZ() - player.prevZ) * partialTicks;
+        Vec3d pos = player.getTrackedPosition().getPos(); // TODO: ???
+
+        x = pos.x + (player.getX() - pos.x) * partialTicks;
+        y = pos.y + (player.getY() - pos.y) * partialTicks;
+        z = pos.z + (player.getZ() - pos.z) * partialTicks;
         dimensionId = DimensionId.from(player.getEntityWorld().getRegistryKey());
     }
 

@@ -35,6 +35,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.BiFunction;
 
+import org.jetbrains.annotations.Nullable;
+
 class NBTStructureLoader {
     private final DimensionId dimensionId;
     private final Set<String> loadedChunks = new HashSet<>();
@@ -79,8 +81,15 @@ class NBTStructureLoader {
     private FeatureUpdater getLegacyStructureDataUtil() {
         if (this.legacyStructureDataUtil == null) {
             Path dataFolder = this.saveHandler.getWorldDirectory(World.OVERWORLD).resolve("data");
-            this.legacyStructureDataUtil = FeatureUpdater.create(dimensionId.getDimensionType(),
-                    new PersistentStateManager(dataFolder, MinecraftClient.getInstance().getDataFixer(), MinecraftClient.getInstance().world.getRegistryManager()));
+            this.legacyStructureDataUtil = FeatureUpdater.create(
+                dimensionId.getDimensionType(),
+                new PersistentStateManager(
+                    null, // TODO: what is this
+                    dataFolder,
+                    MinecraftClient.getInstance().getDataFixer(),
+                    MinecraftClient.getInstance().world.getRegistryManager()
+                )
+            );
         }
         return this.legacyStructureDataUtil;
     }
@@ -89,13 +98,19 @@ class NBTStructureLoader {
         try {
             NbtCompound compound = this.chunkLoader.readChunk(chunkX, chunkZ);
             if (compound == null) return null;
-            int dataVersion = compound.contains("DataVersion", 99) ? compound.getInt("DataVersion") : -1;
+            int dataVersion = compound.getInt("DataVersion").orElse(-1);
             if (dataVersion < 1493) {
-                if (compound.getCompound("Level").getBoolean("hasLegacyStructureData")) {
+                boolean hasLegacyStructureData = compound.getCompound("Level").orElseThrow()
+                    .getBoolean("hasLegacyStructureData").orElseThrow();
+
+                if (hasLegacyStructureData) {
                     compound = getLegacyStructureDataUtil().getUpdatedReferences(compound);
                 }
             }
-            return compound.getCompound("Level").getCompound("Structures").getCompound("Starts");
+
+            return compound.getCompound("Level").orElseThrow()
+                .getCompound("Structures").orElseThrow()
+                .getCompound("Starts").orElseThrow();
         } catch (IOException ignored) {
         }
         return null;
@@ -111,7 +126,7 @@ class NBTStructureLoader {
 
         Map<String, StructureStart> structureStartMap = new HashMap<>();
         for (String key : structureStarts.getKeys()) {
-            NbtCompound compound = structureStarts.getCompound(key);
+            NbtCompound compound = structureStarts.getCompound(key).orElseThrow();
             if (compound.contains("BB")) {
                 structureStartMap.put(key, new SimpleStructureStart(compound));
             }
@@ -129,21 +144,21 @@ class NBTStructureLoader {
                     0,
                     new StructurePiecesList(createList(compound)));
 
-            this.parsedBoundingBox = create(compound.getIntArray("BB"));
+            this.parsedBoundingBox = create(compound.getIntArray("BB").orElse(null));
         }
 
         private static List<StructurePiece> createList(NbtCompound compound) {
             final ArrayList<StructurePiece> pieces = new ArrayList<>();
-            NbtList children = compound.getList("Children", 10);
+            NbtList children = compound.getListOrEmpty("Children");
             for (int index = 0; index < children.size(); ++index) {
-                NbtCompound child = children.getCompound(index);
+                NbtCompound child = children.getCompoundOrEmpty(index);
                 if (child.contains("BB")) pieces.add(new SimpleStructurePiece(child));
             }
             return pieces;
         }
 
-        private static BlockBox create(int[] compound) {
-            if (compound.length == 6)
+        private static BlockBox create(@Nullable int[] compound) {
+            if (compound != null && compound.length == 6)
                 return new BlockBox(compound[0], compound[1], compound[2], compound[3], compound[4], compound[5]);
             else
                 return new BlockBox(0, 0, 0, 0, 0, 0);

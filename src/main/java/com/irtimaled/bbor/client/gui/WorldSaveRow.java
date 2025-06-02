@@ -100,8 +100,9 @@ public class WorldSaveRow extends ControlListEntry implements Comparable<WorldSa
         }
         try {
             long seed = NbtIo.readCompressed(worldInfo.getDirectory(WorldSavePath.LEVEL_DAT), NbtSizeTracker.ofUnlimitedBytes())
-                    .getCompound("Data")
-                    .getCompound("WorldGenSettings").getLong("seed");
+                    .getCompound("Data").orElseThrow()
+                    .getCompound("WorldGenSettings").orElseThrow()
+                    .getLong("seed").orElseThrow();
             worldInfo.close();
             ClientInterop.saveLoaded(fileName, seed);
         } catch (IOException ignored) {
@@ -115,7 +116,7 @@ public class WorldSaveRow extends ControlListEntry implements Comparable<WorldSa
         }
 
         try (InputStream stream = new FileInputStream(this.iconFile)) {
-            NativeImageBackedTexture texture = new NativeImageBackedTexture(NativeImage.read(stream));
+            NativeImageBackedTexture texture = new NativeImageBackedTexture(iconFile::getName, NativeImage.read(stream));
             this.client.getTextureManager().registerTexture(this.iconLocation, texture);
             return texture;
         } catch (Throwable exception) {

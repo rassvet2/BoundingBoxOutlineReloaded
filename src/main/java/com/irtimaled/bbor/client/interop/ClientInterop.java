@@ -57,7 +57,7 @@ public class ClientInterop {
 
                         MutableText suggestion = Text.literal("")
                                 .formatted(Formatting.GRAY)
-                                .styled(style -> style.withClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, message)));
+                                .styled(style -> style.withClickEvent(new ClickEvent.SuggestCommand(message)));
                         int textLength = Math.min(exception.getInput().length(), exception.getCursor());
                         if (textLength > 10) {
                             suggestion.append("...");

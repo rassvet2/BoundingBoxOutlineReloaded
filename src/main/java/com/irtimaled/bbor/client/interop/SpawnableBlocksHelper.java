@@ -11,6 +11,7 @@ import net.minecraft.entity.mob.ZombifiedPiglinEntity;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.registry.tag.BlockTags;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.collection.Weighted;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.shape.VoxelShape;
@@ -70,9 +71,9 @@ public class SpawnableBlocksHelper {
             Biome biome = biomeRegistryEntry.value();
             final boolean isNether = SpawnableBlocksHelper.isNether.computeIfAbsent(biome, biome1 -> {
                 final SpawnSettings spawnSettings = biome.getSpawnSettings();
-                final List<SpawnSettings.SpawnEntry> entries = spawnSettings.getSpawnEntries(SpawnGroup.MONSTER).getEntries();
-                for (SpawnSettings.SpawnEntry entry : entries) {
-                    if (entry.type.getBaseClass() == ZombifiedPiglinEntity.class) return true;
+                final List<Weighted<SpawnSettings.SpawnEntry>> entries = spawnSettings.getSpawnEntries(SpawnGroup.MONSTER).getEntries();
+                for (Weighted<SpawnSettings.SpawnEntry> entry : entries) {
+                    if (entry.value().type().getBaseClass() == ZombifiedPiglinEntity.class) return true;
                 }
                 return false;
             });

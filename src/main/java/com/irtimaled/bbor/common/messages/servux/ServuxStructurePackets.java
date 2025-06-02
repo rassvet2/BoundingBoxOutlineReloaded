@@ -34,6 +34,8 @@ import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 
+import org.jetbrains.annotations.Nullable;
+
 public class ServuxStructurePackets {
 
     public static final Identifier CHANNEL = Identifier.tryParse("servux:structures");
@@ -61,9 +63,10 @@ public class ServuxStructurePackets {
         switch (id) {
             case PACKET_S2C_METADATA -> {
                 final NbtCompound nbt = reader.handle().readNbt();
-                registered = nbt != null && nbt.getInt("version") == PROTOCOL_VERSION &&
-                        nbt.getString("id").equals(CHANNEL.toString());
-                if (registered) timeout = nbt.getInt("timeout");
+                registered = nbt != null
+                    && nbt.getInt("version").orElse(null) == PROTOCOL_VERSION
+                    && nbt.getString("id").orElse(null).equals(CHANNEL.toString());
+                if (registered) timeout = nbt.getInt("timeout").orElseThrow();
             }
             case PACKET_S2C_STRUCTURE_DATA -> {
                 if (!registered) {
@@ -79,12 +82,12 @@ public class ServuxStructurePackets {
                     System.err.println("Received invalid structure data on servux channel");
                     break;
                 }
-                NbtList structures = nbt.getList("Structures", NbtElement.COMPOUND_TYPE);
-                if (structures == null) {
+                Optional<NbtList> structures = nbt.getList("Structures");
+                if (structures.isEmpty()) {
                     System.err.println("Received invalid structure data on servux channel");
                     break;
                 }
-                for (NbtElement element : structures) {
+                for (NbtElement element : structures.get()) {
                     if (element instanceof NbtCompound compound) {
                         final AddBoundingBoxReceived received = parseBoundingBox(compound);
                         if (received != null) EventBus.publish(received);
@@ -98,7 +101,7 @@ public class ServuxStructurePackets {
     }
 
     private static AddBoundingBoxReceived parseBoundingBox(NbtCompound nbt) {
-        final String structureId = nbt.getString("id");
+        final String structureId = nbt.getString("id").orElseThrow();
 
         final ClientWorld world = MinecraftClient.getInstance().world;
         assert world != null;
@@ -131,10 +134,10 @@ public class ServuxStructurePackets {
         Set<AbstractBoundingBox> boundingBoxes = new HashSet<>();
         BlockBox outerBox = null;
 
-        NbtList pieces = nbt.getList("Children", NbtElement.COMPOUND_TYPE);
+        NbtList pieces = nbt.getListOrEmpty("Children");
         for (NbtElement piece : pieces) {
             if (piece instanceof NbtCompound pieceCompound) {
-                BlockBox blockBox = createBlockBox(pieceCompound.getIntArray("BB"));
+                BlockBox blockBox = createBlockBox(pieceCompound.getIntArray("BB").orElse(null));
                 if (outerBox == null) outerBox = blockBox;
                 else outerBox.encompass(blockBox);
                 boundingBoxes.add(
@@ -165,8 +168,8 @@ public class ServuxStructurePackets {
         }
     }
 
-    private static BlockBox createBlockBox(int[] compound) {
-        if (compound.length == 6)
+    private static BlockBox createBlockBox(@Nullable int[] compound) {
+        if (compound != null && compound.length == 6)
             return new BlockBox(compound[0], compound[1], compound[2], compound[3], compound[4], compound[5]);
         else
             return new BlockBox(0, 0, 0, 0, 0, 0);
