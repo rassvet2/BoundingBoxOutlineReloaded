@@ -8,7 +8,7 @@ buildscript {
         }
     }
     dependencies {
-        classpath "net.fabricmc:fabric-loom:1.9-SNAPSHOT"
+        classpath "net.fabricmc:fabric-loom:${project.loom_version}"
     }
 }
 
@@ -88,9 +88,7 @@ jar {
 
 afterEvaluate {
     remapJar.archiveClassifier = 'fabric'
-}
 
-afterEvaluate {
     migrateMappings.configure {
         outputDir = project.file("src/main/java")
     }
