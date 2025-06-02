@@ -28,41 +28,4 @@ public class RenderHelper {
 //        GL11.glDisable(GL11.GL_LINE_SMOOTH);
         RenderSystem.setShaderColor(1, 1, 1, 1);
     }
-
-    public static void disableDepthTest() {
-        RenderSystem.disableDepthTest();
-    }
-
-    public static void enableDepthTest() {
-        RenderSystem.enableDepthTest();
-    }
-
-    public static void disableBlend() {
-        RenderSystem.disableBlend();
-    }
-
-    public static void enableBlend() {
-        RenderSystem.enableBlend();
-    }
-
-    public static void disableTexture() {
-//        RenderSystem.disableTexture();
-    }
-
-    public static void enableTexture() {
-//        RenderSystem.enableTexture();
-    }
-
-    public static void blendFuncGui() {
-        RenderSystem.blendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ZERO, GL11.GL_ONE);
-    }
-
-    public static void depthFuncAlways() {
-        RenderSystem.depthFunc(GL11.GL_ALWAYS);
-    }
-
-    public static void depthFuncLessEqual() {
-        RenderSystem.depthFunc(GL11.GL_LEQUAL);
-    }
-
 }

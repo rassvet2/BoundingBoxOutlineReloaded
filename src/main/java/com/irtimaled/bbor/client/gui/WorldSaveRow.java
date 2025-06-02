@@ -2,7 +2,6 @@ package com.irtimaled.bbor.client.gui;
 
 import com.google.common.hash.Hashing;
 import com.irtimaled.bbor.client.interop.ClientInterop;
-import com.irtimaled.bbor.client.renderers.RenderHelper;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.RenderLayer;
@@ -136,9 +135,7 @@ public class WorldSaveRow extends ControlListEntry implements Comparable<WorldSa
         ctx.drawText(this.client.textRenderer, displayName, (int) (x + ICON_SIZE + 3), (int) (y + 1), 16777215, false);
         ctx.drawText(this.client.textRenderer, details, (int) (x + ICON_SIZE + 3), (int) (y + 1 + this.client.textRenderer.fontHeight + 1), 8421504, false);
 //        this.client.getTextureManager().bindTexture(this.icon != null ? this.iconLocation : ICON_MISSING);
-        RenderHelper.enableBlend();
         ctx.drawTexture(RenderLayer::getGuiTextured, this.icon != null ? this.iconLocation : ICON_MISSING, x, y, 0.0F, 0.0F, ICON_SIZE, ICON_SIZE, 32, 32);
-        RenderHelper.disableBlend();
     }
 
     @Override

@@ -6,13 +6,8 @@ import com.irtimaled.bbor.client.RenderCulling;
 import com.irtimaled.bbor.client.interop.ClientInterop;
 import com.llamalad7.mixinextras.sugar.Local;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.Camera;
-import net.minecraft.client.render.Fog;
-import net.minecraft.client.render.FrameGraphBuilder;
-import net.minecraft.client.render.Frustum;
-import net.minecraft.client.render.GameRenderer;
-import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.client.render.WorldRenderer;
+import net.minecraft.client.gl.Framebuffer;
+import net.minecraft.client.render.*;
 import net.minecraft.client.util.Handle;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.RotationAxis;
@@ -33,7 +28,8 @@ public class MixinWorldRenderer {
     private MinecraftClient client;
 
     @Inject(method = "method_62214", at = @At(value = "INVOKE_STRING", target = "Lnet/minecraft/util/profiler/Profiler;swap(Ljava/lang/String;)V", args = "ldc=blockentities"))
-    private void onRender(Fog fog, RenderTickCounter renderTickCounter, Camera camera, Profiler profiler, Matrix4f matrix4f, Matrix4f matrix4f2, Handle handle, Handle handle2, Handle handle3, Handle handle4, boolean bl, Frustum frustum, Handle handle5, CallbackInfo ci, @Local float f) {
+    private void onRender(Fog fog, RenderTickCounter renderTickCounter, Camera camera, Profiler profiler, Matrix4f positionMatrix, Matrix4f projectionMatrix, Handle<Framebuffer> mainFramebuffer, Handle<Framebuffer> translucentFramebuffer, boolean renderBlockOutline, Frustum frustum, Handle<Framebuffer> itemEntityFramebuffer, Handle<Framebuffer> entityOutlineFramebuffer, CallbackInfo ci, @Local float f) {
+        profiler.swap("bbor-mixin");
         Preconditions.checkNotNull(this.client.player);
         RenderCulling.setFrustum(frustum);
         Player.setPosition(f, this.client.player);

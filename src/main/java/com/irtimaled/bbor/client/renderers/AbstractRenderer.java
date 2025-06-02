@@ -42,7 +42,7 @@ public abstract class AbstractRenderer<T extends AbstractBoundingBox> {
         final double maxZ = nudge.getMax().getZ();
 
         if (fillOnly || ConfigManager.fill.get()) {
-            ctx.drawSolidBox(nudge.toBox(), color, fillAlpha, mask, minX == maxX, minY == maxY, minZ == maxZ);
+            ctx.drawSolidBox(nudge.toBox(), color, fillAlpha, mask);
         }
         if (!fillOnly) {
             renderLine(ctx, new OffsetPoint(minX, minY, minZ), new OffsetPoint(maxX, minY, minZ), color, true);

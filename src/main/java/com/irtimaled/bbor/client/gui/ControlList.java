@@ -1,26 +1,19 @@
 package com.irtimaled.bbor.client.gui;
 
-import com.irtimaled.bbor.client.renderers.RenderHelper;
-import com.irtimaled.bbor.client.renderers.Renderer;
 import com.irtimaled.bbor.common.MathHelper;
-import com.mojang.blaze3d.platform.GlStateManager;
-import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.ShaderProgramKeys;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.TabButtonWidget;
 import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
-import net.minecraft.client.render.GameRenderer;
+import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.Tessellator;
-import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
 
 import java.util.ArrayList;
 import java.util.List;
+
+import com.mojang.blaze3d.vertex.VertexFormat;
 
 public class ControlList implements IControlSet {
     private static final Identifier OPTIONS_BACKGROUND_TEXTURE = Identifier.tryParse("bbor:textures/gui/options_background.png");
@@ -183,29 +176,18 @@ public class ControlList implements IControlSet {
         int listTop = this.top + PADDING - (int) this.amountScrolled;
 
         Screen.renderBackgroundTexture(ctx, MinecraftClient.getInstance().world != null ? Screen.INWORLD_MENU_BACKGROUND_TEXTURE : Screen.MENU_BACKGROUND_TEXTURE, 0, top, 0.0F, 0.0F, width, height);
+        ctx.enableScissor(0, this.top, this.width, this.bottom);
         drawEntries(ctx, mouseX, mouseY, listTop);
-
-        RenderHelper.enableDepthTest();
-        RenderHelper.depthFuncAlways();
+        ctx.disableScissor();
 
         this.overlayBackground(0, this.top);
         this.overlayBackground(this.bottom, this.height);
-        RenderHelper.depthFuncLessEqual();
-        RenderHelper.disableDepthTest();
-        RenderHelper.enableBlend();
-        RenderHelper.blendFuncGui();
-        // RenderHelper.shadeModelSmooth();
-        RenderHelper.disableTexture();
         drawOverlayShadows();
 
         int maxScroll = this.getMaxScroll();
         if (maxScroll > 0) {
             drawScrollBar(maxScroll);
         }
-
-        RenderHelper.enableTexture();
-        // RenderHelper.shadeModelFlat();
-        RenderHelper.disableBlend();
     }
 
     private void drawEntries(DrawContext ctx, int mouseX, int mouseY, int top) {
@@ -233,26 +215,25 @@ public class ControlList implements IControlSet {
     private void overlayBackground(int top, int bottom) {
         Tessellator tessellator = Tessellator.getInstance();
         BufferBuilder bufferBuilder = tessellator.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
-        RenderSystem.setShaderTexture(0, OPTIONS_BACKGROUND_TEXTURE);
 
         bufferBuilder
-                .vertex(0, bottom, -100.0F)
+                .vertex(0, bottom, 100F)
                 .texture(0.0F, (float) bottom / 32.0F)
                 .color(64, 64, 64, 255);
         bufferBuilder
-                .vertex(this.width, bottom, -100.0F)
+                .vertex(this.width, bottom, 100F)
                 .texture((float) this.width / 32.0F, (float) bottom / 32.0F)
                 .color(64, 64, 64, 255);
         bufferBuilder
-                .vertex(this.width, top, -100.0F)
+                .vertex(this.width, top, 100F)
                 .texture((float) this.width / 32.0F, (float) top / 32.0F)
                 .color(64, 64, 64, 255);
         bufferBuilder
-                .vertex(0, top, -100.0F)
+                .vertex(0, top, 100F)
                 .texture(0.0f, (float) top / 32.0F)
                 .color(64, 64, 64, 255);
-        BufferRenderer.drawWithGlobalProgram(bufferBuilder.end());
+
+        RenderLayer.getGuiTexturedOverlay(OPTIONS_BACKGROUND_TEXTURE).draw(bufferBuilder.end());
     }
 
     private void drawScrollBar(int maxScroll) {
@@ -264,8 +245,6 @@ public class ControlList implements IControlSet {
 
         Tessellator tessellator = Tessellator.getInstance();
         BufferBuilder bufferBuilder = tessellator.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
-        RenderHelper.disableTexture();
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
 
         bufferBuilder.vertex(this.scrollBarLeft, this.bottom, 0.0F).color(0, 0, 0, 255);
         bufferBuilder.vertex(this.width, this.bottom, 0.0F).color(0, 0, 0, 255);
@@ -282,16 +261,10 @@ public class ControlList implements IControlSet {
         bufferBuilder.vertex(this.width - 1, scrollBarTop, 0.0F).color(192, 192, 192, 255);
         bufferBuilder.vertex(this.scrollBarLeft, scrollBarTop, 0.0F).color(192, 192, 192, 255);
 
-        BufferRenderer.drawWithGlobalProgram(bufferBuilder.end());
-        RenderHelper.enableTexture();
+        RenderLayer.getGui().draw(bufferBuilder.end());
     }
 
     private void drawOverlayShadows() {
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
-        RenderSystem.enableBlend();
-        RenderSystem.blendFuncSeparate(GlStateManager.SrcFactor.SRC_ALPHA, GlStateManager.DstFactor.ONE_MINUS_SRC_ALPHA, GlStateManager.SrcFactor.ZERO, GlStateManager.DstFactor.ONE);
-        RenderHelper.disableTexture();
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
         Tessellator tessellator = Tessellator.getInstance();
         BufferBuilder bufferBuilder = tessellator.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
 
@@ -305,9 +278,7 @@ public class ControlList implements IControlSet {
         bufferBuilder.vertex(0, this.bottom, 0.0F).color(0, 0, 0, 255);
         bufferBuilder.vertex(this.width, this.bottom, 0.0F).color(0, 0, 0, 255);
 
-        BufferRenderer.drawWithGlobalProgram(bufferBuilder.end());
-        RenderHelper.enableTexture();
-        RenderSystem.disableBlend();
+        RenderLayer.getGuiOverlay().draw(bufferBuilder.end());
     }
 
     ControlList section(String title, CreateControl... createControls) {

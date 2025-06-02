@@ -1,8 +1,12 @@
 package com.irtimaled.bbor.client.gui;
 
-import com.irtimaled.bbor.client.renderers.RenderHelper;
-import com.irtimaled.bbor.client.renderers.Renderer;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.render.BufferBuilder;
+import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.render.Tessellator;
+import net.minecraft.client.render.VertexFormats;
+import net.minecraft.util.Colors;
 
 public class SelectableControlList extends ControlList {
     private final int listRight;
@@ -83,23 +87,23 @@ public class SelectableControlList extends ControlList {
     @Override
     protected void drawEntry(DrawContext ctx, int mouseX, int mouseY, int top, ControlListEntry entry, int height) {
         if (this.selectedElement == entry.index) {
-            RenderHelper.disableTexture();
-            int color = this.isFocused ? 255 : 128;
-            Renderer.startQuads()
-                    .setMatrixStack(ctx.getMatrices())
-                    .setAlpha(255)
-                    .setColor(color, color, color)
-                    .addPoint((double) this.listLeft - 2, (double) (top + height) - 2, 0.0D)
-                    .addPoint((double) this.listRight + 2, (double) (top + height) - 2, 0.0D)
-                    .addPoint((double) this.listRight + 2, top - 2, 0.0D)
-                    .addPoint((double) this.listLeft - 2, top - 2, 0.0D)
-                    .setColor(0, 0, 0)
-                    .addPoint(this.listLeft - 1, (double) (top + height) - 3, 0.0D)
-                    .addPoint(this.listRight + 1, (double) (top + height) - 3, 0.0D)
-                    .addPoint(this.listRight + 1, top - 1, 0.0D)
-                    .addPoint(this.listLeft - 1, top - 1, 0.0D)
-                    .render();
-            RenderHelper.enableTexture();
+            Tessellator tessellator = Tessellator.getInstance();
+            BufferBuilder bufferBuilder = tessellator.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+
+            int color = this.isFocused ? Colors.WHITE : Colors.GRAY;
+            var mat = ctx.getMatrices().peek();
+
+            bufferBuilder.vertex(mat, this.listLeft - 2f, (top + height) - 2f, 0f).color(color);
+            bufferBuilder.vertex(mat, this.listRight + 2f, (top + height) - 2f, 0f).color(color);
+            bufferBuilder.vertex(mat, this.listRight + 2f, top - 2f, 0f).color(color);
+            bufferBuilder.vertex(mat, this.listLeft - 2f, top - 2f, 0f).color(color);
+
+            bufferBuilder.vertex(mat, this.listLeft - 1f, (top + height) - 3f, 0f).color(color);
+            bufferBuilder.vertex(mat, this.listRight + 1f, (top + height) - 3f, 0f).color(color);
+            bufferBuilder.vertex(mat, this.listRight + 1f, top - 1f, 0f).color(color);
+            bufferBuilder.vertex(mat, this.listLeft - 1f, top - 1f, 0f).color(color);
+
+            RenderLayer.getGuiOverlay().draw(bufferBuilder.end());
         }
         super.drawEntry(ctx, mouseX, mouseY, top, entry, height);
     }
