@@ -1,7 +1,9 @@
 package com.irtimaled.bbor.client.renderers;
 
+import com.irtimaled.bbor.client.config.ConfigManager;
 import com.irtimaled.bbor.mixin.client.renderer.access.IMultiPhaseParametersBuilder;
 import com.irtimaled.bbor.mixin.client.renderer.access.IRenderLayer;
+import com.irtimaled.bbor.mixin.client.renderer.access.IRenderPhase;
 import com.irtimaled.bbor.mixin.client.renderer.access.IRenderPipelines;
 import com.mojang.blaze3d.buffers.BufferType;
 import com.mojang.blaze3d.buffers.BufferUsage;
@@ -12,16 +14,18 @@ import com.mojang.blaze3d.platform.DepthTestFunction;
 import com.mojang.blaze3d.systems.RenderPass;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.VertexFormat;
+import it.unimi.dsi.fastutil.objects.Reference2ObjectArrayMap;
 import net.minecraft.client.gl.Framebuffer;
-import net.minecraft.client.render.BuiltBuffer;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.RenderPhase;
-import net.minecraft.client.render.VertexFormats;
+import net.minecraft.client.render.*;
 
+import net.minecraft.client.util.BufferAllocator;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.Util;
 
 import java.io.Closeable;
 import java.nio.ByteBuffer;
+import java.util.List;
+import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
 
@@ -66,7 +70,9 @@ public class RenderHelper {
                             .withVertexFormat(VertexFormats.POSITION_COLOR, VertexFormat.DrawMode.QUADS)
                             .build()
             ),
-            builder(RenderLayer.MultiPhaseParameters.builder()).build0(false)
+            builder(builder(RenderLayer.MultiPhaseParameters.builder())
+                    .target0(IRenderPhase.TRANSLUCENT_TARGET()))
+                    .build0(false)
     );
 
     public static final RenderLayer DEBUG_QUADS_NO_DEPTH_TEST = IRenderLayer.of(
@@ -79,6 +85,21 @@ public class RenderHelper {
             ),
             builder(RenderLayer.MultiPhaseParameters.builder()).build0(false)
     );
+
+    public static final List<RenderLayer> LAYER_LIST = List.of(
+            DEBUG_LINES,
+            DEBUG_LINES_NO_DEPTH_TEST,
+            DEBUG_QUADS,
+            DEBUG_QUADS_NO_DEPTH_TEST
+    );
+
+    public static RenderLayer getDebugLines() {
+        return ConfigManager.alwaysVisible.get() ? DEBUG_LINES_NO_DEPTH_TEST : DEBUG_LINES;
+    }
+
+    public static RenderLayer getDebugQuads() {
+        return ConfigManager.alwaysVisible.get() ? DEBUG_QUADS_NO_DEPTH_TEST : DEBUG_QUADS;
+    }
 
     private static IMultiPhaseParametersBuilder builder(RenderLayer.MultiPhaseParameters.Builder builder) {
         return (IMultiPhaseParametersBuilder) builder;
@@ -107,7 +128,9 @@ public class RenderHelper {
         private GpuBuffer indexBuffer;
         private VertexFormat.IndexType indexType;
         private int indexCount;
+
         private boolean uploaded = false;
+        private boolean shouldIndexBufferClose = false;
 
         public RenderLayerHelper(
                 RenderLayer layer,
@@ -127,6 +150,7 @@ public class RenderHelper {
             RenderSystem.assertOnRenderThread();
 
             BuiltBuffer.DrawParameters param = buffer.getDrawParameters();
+//            buffer.sortQuads()
 
             ByteBuffer vertexBuffer = buffer.getBuffer();
             if (this.vertexBuffer == null || this.vertexBuffer.size() < vertexBuffer.remaining()) {
@@ -139,15 +163,17 @@ public class RenderHelper {
 
             if (buffer.getSortedBuffer() == null) {
                 // don't close shared buffer
-//                if (this.indexBuffer != null) this.indexBuffer.close();
+                if (this.indexBuffer != null && this.shouldIndexBufferClose) this.indexBuffer.close();
                 RenderSystem.ShapeIndexBuffer shapeIndexBuffer = RenderSystem.getSequentialBuffer(param.mode());
                 this.indexBuffer = shapeIndexBuffer.getIndexBuffer(param.indexCount());
                 this.indexType = shapeIndexBuffer.getIndexType();
+                this.shouldIndexBufferClose = false;
             } else {
                 ByteBuffer indexBuffer = buffer.getSortedBuffer();
                 if (this.indexBuffer == null || this.indexBuffer.size() < indexBuffer.remaining()) {
-                    if (this.indexBuffer != null) this.indexBuffer.close();
+                    if (this.indexBuffer != null && this.shouldIndexBufferClose) this.indexBuffer.close();
                     this.indexBuffer = RenderHelper.createIndexBuffer(layer, (int) (indexBuffer.remaining() * 1.5));
+                    this.shouldIndexBufferClose = true;
                 }
 
                 RenderSystem.getDevice().createCommandEncoder()
@@ -206,10 +232,37 @@ public class RenderHelper {
         @Override
         public void close() {
             if (this.vertexBuffer != null) this.vertexBuffer.close();
-            if (this.indexBuffer != null) this.indexBuffer.close();
+            if (this.indexBuffer != null && this.shouldIndexBufferClose) this.indexBuffer.close();
             clear();
             vertexBuffer = null;
             indexBuffer = null;
+        }
+    }
+
+    public static final class Allocators implements Closeable {
+        private final Map<RenderLayer, BufferAllocator> allocators = Util.make(new Reference2ObjectArrayMap<>(4), map -> {
+            for (RenderLayer renderLayer : RenderHelper.LAYER_LIST) {
+                map.put(renderLayer, new BufferAllocator(renderLayer.getExpectedBufferSize()));
+            }
+        });
+
+        public BufferAllocator getAllocator(RenderLayer layer) {
+            return this.allocators.get(layer);
+        }
+        public BufferBuilder getBufferBuilder(RenderLayer layer) {
+            return new BufferBuilder(getAllocator(layer), layer.getDrawMode(), layer.getVertexFormat());
+        }
+
+        public void clear() {
+            this.allocators.values().forEach(BufferAllocator::clear);
+        }
+
+        public void reset() {
+            this.allocators.values().forEach(BufferAllocator::reset);
+        }
+
+        public void close() {
+            this.allocators.values().forEach(BufferAllocator::close);
         }
     }
 }

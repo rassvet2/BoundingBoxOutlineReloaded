@@ -29,7 +29,6 @@ import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.util.math.MatrixStack;
 
 import java.util.Comparator;
 import java.util.HashSet;
@@ -102,8 +101,8 @@ public class ClientRenderer {
         return boundingBox.intersectsBounds(minX, minZ, maxX, maxZ);
     }
 
-    public static void render(MatrixStack matrixStack, DimensionId dimensionId) {
-        AsyncRenderer.render(matrixStack, dimensionId);
+    public static void render(DimensionId dimensionId) {
+        AsyncRenderer.render(dimensionId);
     }
 
     private static final ThreadLocal<ObjectArrayList<AbstractBoundingBox>> listForRendering =

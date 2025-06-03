@@ -11,6 +11,9 @@ public interface IMultiPhaseParametersBuilder {
     @Invoker("lineWidth")
     Builder lineWidth0(RenderPhase.LineWidth lineWidth);
 
+    @Invoker("target")
+    Builder target0(RenderPhase.Target target);
+
     @Invoker("build")
     MultiPhaseParameters build0(boolean affectsOutline);
 }

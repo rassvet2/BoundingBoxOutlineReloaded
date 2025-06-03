@@ -19,7 +19,6 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.command.CommandSource;
 import net.minecraft.server.command.CommandOutput;
 import net.minecraft.server.command.ServerCommandSource;
@@ -39,8 +38,8 @@ public class ClientInterop {
         EventBus.publish(new DisconnectedFromRemoteServer());
     }
 
-    public static void render(MatrixStack matrixStack, ClientPlayerEntity player) {
-        ClientRenderer.render(matrixStack, DimensionId.from(player.getEntityWorld().getRegistryKey()));
+    public static void render(ClientPlayerEntity player) {
+        ClientRenderer.render(DimensionId.from(player.getEntityWorld().getRegistryKey()));
     }
 
     public static boolean interceptCommandUsage(String message) {

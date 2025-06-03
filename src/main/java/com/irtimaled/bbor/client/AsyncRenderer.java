@@ -1,14 +1,14 @@
 package com.irtimaled.bbor.client;
 
+import com.google.common.collect.Queues;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.irtimaled.bbor.client.config.ConfigManager;
 import com.irtimaled.bbor.client.renderers.AbstractRenderer;
 import com.irtimaled.bbor.client.renderers.RenderingContext;
 import com.irtimaled.bbor.common.models.AbstractBoundingBox;
 import com.irtimaled.bbor.common.models.DimensionId;
-import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.text.Text;
 import net.minecraft.text.TextColor;
 import net.minecraft.util.Formatting;
@@ -16,6 +16,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
@@ -30,7 +31,7 @@ public class AsyncRenderer {
             new ThreadFactoryBuilder().setNameFormat("BBOR Building Thread").setDaemon(true).build()
     );
 
-    private static final RenderingContext DEFAULT = new RenderingContext();
+    private static final RenderingContext SYNC_CONTEXT = new RenderingContext();
 
     private static final RenderingContext[] asyncContexts = new RenderingContext[] {
             new RenderingContext(),
@@ -44,16 +45,16 @@ public class AsyncRenderer {
     private static AtomicLong lastDurationNanos = new AtomicLong(0L);
     private static DimensionId lastDimID = null;
     private static RenderingContext lastCtx;
-    private static volatile List<AbstractBoundingBox> syncRenders = List.of();
+    private static final Queue<AbstractBoundingBox> syncRenders = Queues.newConcurrentLinkedQueue();
     private static final AtomicInteger runningBuilds = new AtomicInteger();
 
-    static void render(MatrixStack matrixStack, DimensionId dimensionId) {
+    static void render(DimensionId dimensionId) {
         runCleanup();
 
         if (!ClientRenderer.getActive()) {
             if (lastActive) {
                 lastActive = false;
-                DEFAULT.hardReset();
+                SYNC_CONTEXT.hardReset();
                 // invalidate async things
                 if (buildingFuture != null || currentAsyncContext != -1) {
                     currentAsyncContext = -1;
@@ -74,17 +75,16 @@ public class AsyncRenderer {
         lastActive = true;
 
         long startTime = System.nanoTime();
-        RenderHelper.beforeRender();
 
         final Boolean useAsync = ConfigManager.asyncBuilding.get();
         if (useAsync) {
             final int i = getNextAsyncContext(dimensionId);
             if (i != -1) {
                 final RenderingContext ctx = asyncContexts[i];
-                draw(matrixStack, ctx);
 
-                buildSyncs(DEFAULT);
-                draw(matrixStack, DEFAULT);
+                draw(ctx);
+                buildSyncRenders();
+                draw(SYNC_CONTEXT);
 
                 lastCtx = ctx;
             } else {
@@ -95,31 +95,32 @@ public class AsyncRenderer {
             currentAsyncContext = -1;
             toDiscardBuild = true;
 
-            final RenderingContext ctx = DEFAULT;
+            final RenderingContext ctx = SYNC_CONTEXT;
 
-            build0(dimensionId, ctx, true);
 
-            draw(matrixStack, ctx);
-
+            build0(dimensionId, ctx);
+            draw(ctx);
             RenderCulling.flushRendering();
 
             lastCtx = ctx;
         }
-        RenderHelper.afterRender();
 
         RenderingContext.handleRenderTask();
         lastDurationNanos.set(System.nanoTime() - startTime);
     }
 
-    private static void draw(MatrixStack matrixStack, RenderingContext ctx) {
-        matrixStack.push();
-        matrixStack.translate(
-                ctx.getBaseX() - Camera.getX(),
-                ctx.getBaseY() - Camera.getY(),
-                ctx.getBaseZ() - Camera.getZ()
+    private static void draw(RenderingContext ctx) {
+        var stack = RenderSystem.getModelViewStack().pushMatrix();
+        RenderSystem.backupProjectionMatrix();
+        RenderSystem.getProjectionMatrix().translate(0.0f, 0.0f, 0.01f);
+        stack.translate(
+                (float) -Camera.getX(),
+                (float) -Camera.getY(),
+                (float) -Camera.getZ()
         );
-        ctx.doDrawing(matrixStack);
-        matrixStack.pop();
+        ctx.doDrawing();
+        stack.popMatrix();
+        RenderSystem.backupProjectionMatrix();
     }
 
     private static int getNextAsyncContext(DimensionId dimensionId) {
@@ -128,18 +129,22 @@ public class AsyncRenderer {
             lastDimID = dimensionId;
             toDiscardBuild = true;
         }
-        if ((buildingFuture == null || buildingFuture.isDone()) && lastBuildTime + 2000 < System.currentTimeMillis()) {
-            lastBuildTime = System.currentTimeMillis();
-            RenderingContext ctx = asyncContexts[(currentAsyncContext + 1) % asyncContexts.length];
-            buildingFuture = CompletableFuture.runAsync(() -> build0(dimensionId, ctx, false), EXECUTOR)
-                    .exceptionallyAsync(throwable -> {
-                        LOGGER.error("Error occurred while building buffers async", throwable);
-                        MinecraftClient.getInstance().inGameHud.getChatHud().addMessage(
-                                Text.of("[BBOR] Error occurred while building buffers async, check logs and try re-enabling rendering: " + throwable.toString())
-                                        .copy().styled(style -> style.withBold(true).withColor(TextColor.fromFormatting(Formatting.RED))));
-                        return null;
-                    }, MinecraftClient.getInstance());
+        if ((buildingFuture != null && !buildingFuture.isDone()) || lastBuildTime + 2000 >= System.currentTimeMillis()) {
+            return currentAsyncContext;
         }
+
+        lastBuildTime = System.currentTimeMillis();
+
+        RenderingContext ctx = asyncContexts[(currentAsyncContext + 1) % asyncContexts.length];
+        buildingFuture = CompletableFuture
+                .runAsync(() -> build0(dimensionId, ctx), EXECUTOR)
+                .exceptionallyAsync(throwable -> {
+                    LOGGER.error("Error occurred while building buffers async", throwable);
+                    MinecraftClient.getInstance().inGameHud.getChatHud().addMessage(
+                            Text.of("[BBOR] Error occurred while building buffers async, check logs and try re-enabling rendering: " + throwable.toString())
+                                    .copy().styled(style -> style.withBold(true).withColor(TextColor.fromFormatting(Formatting.RED))));
+                    return null;
+                }, MinecraftClient.getInstance());
         return currentAsyncContext;
     }
 
@@ -154,7 +159,7 @@ public class AsyncRenderer {
         }
     }
 
-    private static void build0(DimensionId dimensionId, RenderingContext ctx, boolean onRenderThread) {
+    private static void build0(DimensionId dimensionId, RenderingContext ctx) {
         ctx.reset();
         ctx.beginBatch();
         runningBuilds.incrementAndGet();
@@ -165,34 +170,39 @@ public class AsyncRenderer {
             RenderCulling.flushPreRendering();
             for (AbstractBoundingBox key : boundingBoxes) {
                 AbstractRenderer renderer = key.getRenderer();
-                if (renderer != null) {
-                    renderer.render(ctx, key);
-                    if (key.needSyncRendering()) {
-                        if (onRenderThread) renderer.renderSync(ctx, key);
-                        else syncs.add(key);
+                if (renderer == null) continue;
+
+                profiler.push(renderer.getClass().getSimpleName());
+
+                renderer.render(ctx, key);
+                if (key.needSyncRendering()) {
+                    if (RenderSystem.isOnRenderThread()) {
+                        renderer.renderSync(ctx, key);
+                    } else {
+                        syncRenders.add(key);
                     }
                 }
             }
-            syncRenders = syncs;
         } finally {
             runningBuilds.decrementAndGet();
             ctx.endBatch();
         }
     }
 
-    private static void buildSyncs(RenderingContext ctx) {
-        ctx.reset();
-        ctx.beginBatch();
+    private static void buildSyncRenders() {
+        AsyncRenderer.SYNC_CONTEXT.reset();
+        AsyncRenderer.SYNC_CONTEXT.beginBatch();
 
         try {
-            for (AbstractBoundingBox key : syncRenders) {
+            AbstractBoundingBox key;
+            while ((key = syncRenders.poll()) != null) {
                 AbstractRenderer renderer = key.getRenderer();
                 if (renderer != null) {
-                    renderer.renderSync(ctx, key);
+                    renderer.renderSync(AsyncRenderer.SYNC_CONTEXT, key);
                 }
             }
         } finally {
-            ctx.endBatch();
+            AsyncRenderer.SYNC_CONTEXT.endBatch();
         }
     }
 
@@ -206,11 +216,14 @@ public class AsyncRenderer {
             return List.of("[BBOR] Preparing rendering...");
         } else {
             if (currentAsyncContext != -1) {
-                return List.of("[BBOR] Async: " + ctx.debugString(), "[BBOR] Sync: " + DEFAULT.debugString());
+                return List.of(
+                        "[BBOR] Async" + (currentAsyncContext == 0 ? "*" : " ") + ": " + asyncContexts[0].debugString(),
+                        "[BBOR] Async" + (currentAsyncContext == 1 ? "*" : " ") + ": " + asyncContexts[1].debugString(),
+                        "[BBOR] Sync: " + SYNC_CONTEXT.debugString()
+                );
             } else {
                 return List.of("[BBOR] " + ctx.debugString());
             }
         }
     }
-
 }

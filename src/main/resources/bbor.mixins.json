@@ -47,6 +47,7 @@
         "network.common.s2c.MixinSSpawnPositionPacket",
         "client.renderer.access.IRenderPipelines",
         "client.renderer.access.IRenderLayer",
+        "client.renderer.access.IRenderPhase",
         "client.renderer.access.IMultiPhaseParametersBuilder"
     ],
     "server": [
