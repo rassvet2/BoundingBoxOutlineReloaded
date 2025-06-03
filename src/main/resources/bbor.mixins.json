@@ -44,7 +44,10 @@
         "network.common.s2c.MixinSChatPacket",
         "network.common.s2c.MixinSChunkDataPacket",
         "network.common.s2c.MixinSCommandListPacket",
-        "network.common.s2c.MixinSSpawnPositionPacket"
+        "network.common.s2c.MixinSSpawnPositionPacket",
+        "client.renderer.access.IRenderPipelines",
+        "client.renderer.access.IRenderLayer",
+        "client.renderer.access.IMultiPhaseParametersBuilder"
     ],
     "server": [
         "server.dedicated.MixinDedicatedServer"

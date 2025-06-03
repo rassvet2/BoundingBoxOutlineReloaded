@@ -1,25 +1,26 @@
 package com.irtimaled.bbor.client.renderers;
 
+import com.google.common.collect.Lists;
+import com.google.common.collect.Queues;
 import com.irtimaled.bbor.client.Camera;
 import com.irtimaled.bbor.client.models.Point;
 import com.mojang.blaze3d.systems.RenderSystem;
-import net.minecraft.client.gl.GlUsage;
-import net.minecraft.client.gl.ShaderProgramKeys;
-import net.minecraft.client.gl.VertexBuffer;
+
 import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.BuiltBuffer;
-import net.minecraft.client.render.GameRenderer;
-import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.BufferAllocator;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.util.Util;
 import net.minecraft.util.math.Box;
 
 import java.awt.*;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+
+import com.mojang.blaze3d.vertex.VertexFormat;
 
 /**
  * Intended to be reused. This class is not thread-safe.
@@ -34,13 +35,9 @@ public class RenderingContext {
     private BufferBuilder quadBufferBuilderMasked;
     private BufferBuilder lineBufferBuilder;
 
-    private boolean isFreshBuffers = true;
-    private VertexBuffer quadBufferNonMaskedUploaded = new VertexBuffer(GlUsage.DYNAMIC_WRITE);
-    private boolean quadBufferNonMaskedUploadedEmpty = true;
-    private VertexBuffer quadBufferMaskedUploaded = new VertexBuffer(GlUsage.DYNAMIC_WRITE);
-    private boolean quadBufferMaskedUploadedEmpty = true;
-    private VertexBuffer lineBufferUploaded = new VertexBuffer(GlUsage.DYNAMIC_WRITE);
-    private boolean lineBufferUploadedEmpty = true;
+    private final RenderHelper.RenderLayerHelper quadRenderInfo = new RenderHelper.RenderLayerHelper(RenderHelper.DEBUG_QUADS);
+    private final RenderHelper.RenderLayerHelper maskedQuadRenderInfo = new RenderHelper.RenderLayerHelper(RenderHelper.DEBUG_QUADS);
+    private final RenderHelper.RenderLayerHelper lineRenderInfo = new RenderHelper.RenderLayerHelper(RenderHelper.DEBUG_LINES);
 
     private long quadNonMaskedCount;
     private long quadMaskedCount;
@@ -53,6 +50,8 @@ public class RenderingContext {
     private volatile double baseX;
     private volatile double baseY;
     private volatile double baseZ;
+
+    private static final Queue<Runnable> uploadQueue = Queues.newConcurrentLinkedQueue();
 
     public RenderingContext() {
         reset();
@@ -70,14 +69,9 @@ public class RenderingContext {
 
     public void hardReset() {
         reset();
-        if (!isFreshBuffers) {
-            this.lineBufferUploaded.close();
-            this.quadBufferMaskedUploaded.close();
-            this.quadBufferNonMaskedUploaded.close();
-            this.lineBufferUploaded = new VertexBuffer(GlUsage.DYNAMIC_WRITE);
-            this.quadBufferMaskedUploaded = new VertexBuffer(GlUsage.DYNAMIC_WRITE);
-            this.quadBufferNonMaskedUploaded = new VertexBuffer(GlUsage.DYNAMIC_WRITE);
-        }
+        this.quadRenderInfo.clear();
+        this.maskedQuadRenderInfo.clear();
+        this.lineRenderInfo.clear();
     }
 
     public double getBaseX() {
@@ -209,72 +203,66 @@ public class RenderingContext {
     }
 
     public void endBatch() {
-        isFreshBuffers = false;
+        List<CompletableFuture<?>> futures = Lists.newArrayListWithExpectedSize(4);
 
-        CompletableFuture<?>[] futures = new CompletableFuture[3];
+        if (this.quadBufferBuilderNonMasked != null) {
+            final BuiltBuffer quadBufferNonMasked = this.quadBufferBuilderNonMasked.endNullable();
+            this.quadBufferBuilderNonMasked = null;
+            futures.add(CompletableFuture.runAsync(() -> {
+                quadRenderInfo.clear();
+                if (quadBufferNonMasked == null) return;
+                quadRenderInfo.upload(quadBufferNonMasked);
+                quadBufferNonMasked.close();
+            }, this::postRenderTask));
+        }
 
-        final Executor executor = command -> {
-            if (RenderSystem.isOnRenderThread()) command.run();
-            else RenderSystem.recordRenderCall(command::run);
-        };
+        if (this.quadBufferBuilderNonMasked != null) {
+            final BuiltBuffer quadBufferMasked = this.quadBufferBuilderNonMasked.endNullable();
+            this.quadBufferBuilderNonMasked = null;
+            futures.add(CompletableFuture.runAsync(() -> {
+                maskedQuadRenderInfo.clear();
+                if (quadBufferMasked == null) return;
+                maskedQuadRenderInfo.upload(quadBufferMasked);
+                quadBufferMasked.close();
+            }, this::postRenderTask));
+        }
 
-        final BuiltBuffer quadBufferMasked = this.quadBufferBuilderMasked.endNullable();
-        quadBufferMaskedUploadedEmpty = quadBufferMasked == null;
-        futures[0] = CompletableFuture.runAsync(() -> {
-            if (!quadBufferMaskedUploadedEmpty) {
-                quadBufferMaskedUploaded.bind();
-                quadBufferMaskedUploaded.upload(quadBufferMasked);
-                VertexBuffer.unbind();
-            }
-        }, executor);
+        if (this.lineBufferBuilder != null) {
+            final BuiltBuffer lineBuffer = this.lineBufferBuilder.endNullable();
+            this.lineBufferBuilder = null;
+            futures.add(CompletableFuture.runAsync(() -> {
+                lineRenderInfo.clear();
+                if (lineBuffer == null) return;
+                lineRenderInfo.upload(lineBuffer);
+                lineBuffer.close();
+            }, this::postRenderTask));
+        }
 
-        final BuiltBuffer quadBufferNonMasked = this.quadBufferBuilderNonMasked.endNullable();
-        quadBufferNonMaskedUploadedEmpty = quadBufferNonMasked == null;
-        futures[1] = CompletableFuture.runAsync(() -> {
-            if (!quadBufferNonMaskedUploadedEmpty) {
-                quadBufferNonMaskedUploaded.bind();
-                quadBufferNonMaskedUploaded.upload(quadBufferNonMasked);
-                VertexBuffer.unbind();
-            }
-        }, executor);
-
-        final BuiltBuffer lineBuffer = this.lineBufferBuilder.endNullable();
-        lineBufferUploadedEmpty = lineBuffer == null;
-        futures[2] = CompletableFuture.runAsync(() -> {
-            if (!lineBufferUploadedEmpty) {
-                lineBufferUploaded.bind();
-                lineBufferUploaded.upload(lineBuffer);
-                VertexBuffer.unbind();
-            }
-        }, executor);
-
-        CompletableFuture.allOf(futures).join();
+        Util.combine(futures).join();
         lastBuildDurationNanos = System.nanoTime() - lastBuildStartTime;
     }
 
     public void doDrawing(MatrixStack stack) {
+        RenderSystem.assertOnRenderThread();
+        handleRenderTask();
+
         long startTime = System.nanoTime();
 
         final MatrixStack.Entry top = stack.peek();
 
-        RenderSystem.depthMask(true);
-        if (!lineBufferUploadedEmpty) {
-            lineBufferUploaded.bind();
-            lineBufferUploaded.draw(top.getPositionMatrix(), RenderSystem.getProjectionMatrix(), RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR));
-        }
-        if (!quadBufferMaskedUploadedEmpty) {
-            quadBufferMaskedUploaded.bind();
-            quadBufferMaskedUploaded.draw(top.getPositionMatrix(), RenderSystem.getProjectionMatrix(), RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR));
-        }
+        try {
+            RenderSystem.getModelViewStack().pushMatrix();
+//            RenderSystem.getModelViewStack().translate(top.getPositionMatrix().getTranslation(new Vector3f()));
+            RenderSystem.getModelViewStack().mulAffine(top.getPositionMatrix());
 
-        RenderSystem.depthMask(false);
-        if (!quadBufferNonMaskedUploadedEmpty) {
-            quadBufferNonMaskedUploaded.bind();
-            quadBufferNonMaskedUploaded.draw(top.getPositionMatrix(), RenderSystem.getProjectionMatrix(), RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR));
+            if (lineRenderInfo.isUploaded()) lineRenderInfo.draw();
+            if (quadRenderInfo.isUploaded()) quadRenderInfo.draw();
+            if (maskedQuadRenderInfo.isUploaded()) maskedQuadRenderInfo.draw();
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            RenderSystem.getModelViewStack().popMatrix();
         }
-
-        VertexBuffer.unbind();
-        RenderSystem.depthMask(true);
 
         this.lastRenderDurationNanos = System.nanoTime() - startTime;
     }
@@ -283,6 +271,23 @@ public class RenderingContext {
         return String.format("Statistics: Filled faces: %d+%d Lines: %d @ (%.2fms Build, %.2fms Draw)",
                 quadMaskedCount, quadNonMaskedCount, lineCount,
                 lastBuildDurationNanos / 1_000_000.0, lastRenderDurationNanos / 1_000_000.0);
+    }
+
+    public void postRenderTask(Runnable task) {
+        if (RenderSystem.isOnRenderThread()) {
+            task.run();
+        } else {
+            System.out.println("queueing");
+            uploadQueue.add(task);
+        }
+    }
+
+    public static void handleRenderTask() {
+        RenderSystem.assertOnRenderThread();
+        Runnable task;
+        while ((task = uploadQueue.poll()) != null) {
+            task.run();
+        }
     }
 
 }

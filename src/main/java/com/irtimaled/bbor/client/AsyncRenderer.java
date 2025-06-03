@@ -3,7 +3,6 @@ package com.irtimaled.bbor.client;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.irtimaled.bbor.client.config.ConfigManager;
 import com.irtimaled.bbor.client.renderers.AbstractRenderer;
-import com.irtimaled.bbor.client.renderers.RenderHelper;
 import com.irtimaled.bbor.client.renderers.RenderingContext;
 import com.irtimaled.bbor.common.models.AbstractBoundingBox;
 import com.irtimaled.bbor.common.models.DimensionId;
@@ -108,6 +107,7 @@ public class AsyncRenderer {
         }
         RenderHelper.afterRender();
 
+        RenderingContext.handleRenderTask();
         lastDurationNanos.set(System.nanoTime() - startTime);
     }
 
