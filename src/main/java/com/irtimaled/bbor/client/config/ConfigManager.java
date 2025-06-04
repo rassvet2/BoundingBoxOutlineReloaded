@@ -117,6 +117,7 @@ public class ConfigManager {
 
     public static Setting<Integer> fastRender;
     public static Setting<Boolean> asyncBuilding;
+    public static Setting<Integer> asyncRebuildInterval;
 
     public static Map<String, Setting<Boolean>> structureRenderSettings = Object2ObjectMaps.synchronize(new Object2ObjectOpenHashMap<>());
     public static Map<String, Setting<HexColor>> structureColorSettings = Object2ObjectMaps.synchronize(new Object2ObjectOpenHashMap<>());
@@ -173,6 +174,7 @@ public class ConfigManager {
         buttonOnOverlay = setup(config, "general", "buttonEnabledOverlay", HexColor.from("#3000ff00"), "The color and alpha of the button overlay when a button is on.");
         fastRender = setup(config, "general", "fastRender", 2, "Fast render settings. Higher value for faster rendering. ");
         asyncBuilding = setup(config, "general", "asyncBuilding", true, "Whether to use async building for non-gpu-bottlenecked cases ");
+        asyncRebuildInterval = setup(config, "general", "asyncRebuildInterval", 1000, "How often to rebuild when async building is enabled");
 
         drawBeacons = setup(config, "beacons", "drawBeacons", true, "If set to true beacon bounding boxes will be drawn.");
 

@@ -10,4 +10,9 @@ public interface IRenderPhase {
     static RenderPhase.Target TRANSLUCENT_TARGET() {
         throw new AssertionError();
     }
+
+    @Accessor("FULL_LINE_WIDTH")
+    static RenderPhase.LineWidth FULL_LINE_WIDTH() {
+        throw new AssertionError();
+    }
 }

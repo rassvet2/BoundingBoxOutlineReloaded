@@ -19,24 +19,21 @@ import java.util.concurrent.CompletableFuture;
 
 import net.minecraft.util.math.ColorHelper;
 import org.joml.Vector3f;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Intended to be reused. This class is not thread-safe.
  */
 public class RenderingContext {
 
-    private static final Logger log = LoggerFactory.getLogger(RenderingContext.class);
     private final RenderHelper.Allocators allocators = new RenderHelper.Allocators();
 
-    private BufferBuilder quadBufferBuilderNonMasked;
-    private BufferBuilder quadBufferBuilderMasked;
+    private BufferBuilder quadBufferBuilder;
+    private BufferBuilder maskedQuadBufferBuilder;
     private BufferBuilder lineBufferBuilder;
 
-    private RenderHelper.RenderLayerHelper quadRenderInfo = new RenderHelper.RenderLayerHelper(RenderHelper.getDebugQuads());
-    private RenderHelper.RenderLayerHelper maskedQuadRenderInfo = new RenderHelper.RenderLayerHelper(RenderHelper.getDebugQuads());
-    private RenderHelper.RenderLayerHelper lineRenderInfo = new RenderHelper.RenderLayerHelper(RenderHelper.getDebugLines());
+    private final RenderHelper.RenderLayerHelper quadRenderInfo = new RenderHelper.RenderLayerHelper(RenderHelper::getDebugQuads);
+    private final RenderHelper.RenderLayerHelper maskedQuadRenderInfo = new RenderHelper.RenderLayerHelper(RenderHelper::getDebugQuads);
+    private final RenderHelper.RenderLayerHelper lineRenderInfo = new RenderHelper.RenderLayerHelper(RenderHelper::getDebugLines);
 
     private long quadNonMaskedCount;
     private long quadMaskedCount;
@@ -63,15 +60,12 @@ public class RenderingContext {
         this.quadRenderInfo.close();
         this.maskedQuadRenderInfo.close();
         this.lineRenderInfo.close();
-        this.quadRenderInfo = new RenderHelper.RenderLayerHelper(RenderHelper.getDebugQuads());
-        this.maskedQuadRenderInfo = new RenderHelper.RenderLayerHelper(RenderHelper.getDebugQuads());
-        this.lineRenderInfo = new RenderHelper.RenderLayerHelper(RenderHelper.getDebugLines());
     }
 
     public void beginBatch() {
         lastBuildStartTime = System.nanoTime();
-        quadBufferBuilderMasked = allocators.getBufferBuilder(maskedQuadRenderInfo.getLayer());
-        quadBufferBuilderNonMasked = allocators.getBufferBuilder(quadRenderInfo.getLayer());
+        maskedQuadBufferBuilder = allocators.getBufferBuilder(maskedQuadRenderInfo.getLayer());
+        quadBufferBuilder = allocators.getBufferBuilder(quadRenderInfo.getLayer());
         lineBufferBuilder = allocators.getBufferBuilder(lineRenderInfo.getLayer());
         batchId++;
     }
@@ -112,7 +106,7 @@ public class RenderingContext {
         if (mask) quadMaskedCount++;
         else quadNonMaskedCount++;
 
-        final BufferBuilder bufferBuilder = mask ? quadBufferBuilderMasked : quadBufferBuilderNonMasked;
+        final BufferBuilder bufferBuilder = mask ? maskedQuadBufferBuilder : quadBufferBuilder;
 
         final int colorArgb = ColorHelper.getArgb(alpha, color.getRed(), color.getGreen(), color.getBlue());
         bufferBuilder.vertex(point1).color(colorArgb);
@@ -142,31 +136,31 @@ public class RenderingContext {
 
         var sorter = VertexSorter.byDistance((float) Camera.getX(), (float) Camera.getY(), (float) Camera.getZ());
 
-        if (this.quadBufferBuilderNonMasked != null) {
-            final BuiltBuffer quadBufferNonMasked = this.quadBufferBuilderNonMasked.endNullable();
-            this.quadBufferBuilderNonMasked = null;
-            if (quadBufferNonMasked != null) {
-                quadBufferNonMasked.sortQuads(allocators.getAllocator(RenderHelper.DEBUG_QUADS), sorter);
+        if (this.quadBufferBuilder != null) {
+            final BuiltBuffer quadBuffer = this.quadBufferBuilder.endNullable();
+            this.quadBufferBuilder = null;
+            if (quadBuffer != null) {
+                quadBuffer.sortQuads(allocators.getAllocator(quadRenderInfo.getLayer()), sorter);
             }
             futures.add(CompletableFuture.runAsync(() -> {
                 quadRenderInfo.clear();
-                if (quadBufferNonMasked == null) return;
-                quadRenderInfo.upload(quadBufferNonMasked);
-                quadBufferNonMasked.close();
+                if (quadBuffer == null) return;
+                quadRenderInfo.upload(quadBuffer);
+                quadBuffer.close();
             }, this::postRenderTask));
         }
 
-        if (this.quadBufferBuilderNonMasked != null) {
-            final BuiltBuffer quadBufferMasked = this.quadBufferBuilderNonMasked.endNullable();
-            this.quadBufferBuilderNonMasked = null;
-            if (quadBufferMasked != null) {
-                quadBufferMasked.sortQuads(allocators.getAllocator(RenderHelper.DEBUG_QUADS), sorter);
+        if (this.maskedQuadBufferBuilder != null) {
+            final BuiltBuffer maskedQuadBuffer = this.maskedQuadBufferBuilder.endNullable();
+            this.maskedQuadBufferBuilder = null;
+            if (maskedQuadBuffer != null) {
+                maskedQuadBuffer.sortQuads(allocators.getAllocator(maskedQuadRenderInfo.getLayer()), sorter);
             }
             futures.add(CompletableFuture.runAsync(() -> {
                 maskedQuadRenderInfo.clear();
-                if (quadBufferMasked == null) return;
-                maskedQuadRenderInfo.upload(quadBufferMasked);
-                quadBufferMasked.close();
+                if (maskedQuadBuffer == null) return;
+                maskedQuadRenderInfo.upload(maskedQuadBuffer);
+                maskedQuadBuffer.close();
             }, this::postRenderTask));
         }
 
@@ -190,13 +184,9 @@ public class RenderingContext {
         long startTime = System.nanoTime();
         handleRenderTask();
 
-        try {
-            if (lineRenderInfo.isUploaded()) lineRenderInfo.draw();
-            if (quadRenderInfo.isUploaded()) quadRenderInfo.draw();
-            if (maskedQuadRenderInfo.isUploaded()) maskedQuadRenderInfo.draw();
-        } catch (Exception e) {
-            log.error("Error while drawing", e);
-        }
+        if (lineRenderInfo.isUploaded()) lineRenderInfo.draw();
+        if (quadRenderInfo.isUploaded()) quadRenderInfo.draw();
+        if (maskedQuadRenderInfo.isUploaded()) maskedQuadRenderInfo.draw();
 
         this.lastRenderDurationNanos = System.nanoTime() - startTime;
     }

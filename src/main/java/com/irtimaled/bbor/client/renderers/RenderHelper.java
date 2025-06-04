@@ -1,7 +1,6 @@
 package com.irtimaled.bbor.client.renderers;
 
 import com.irtimaled.bbor.client.config.ConfigManager;
-import com.irtimaled.bbor.mixin.client.renderer.access.IMultiPhaseParametersBuilder;
 import com.irtimaled.bbor.mixin.client.renderer.access.IRenderLayer;
 import com.irtimaled.bbor.mixin.client.renderer.access.IRenderPhase;
 import com.irtimaled.bbor.mixin.client.renderer.access.IRenderPipelines;
@@ -29,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
+import java.util.function.Supplier;
 
 public class RenderHelper {
     private  static final int DEFAULT_SIZE = 4 * 1024 * 1024;
@@ -39,18 +39,18 @@ public class RenderHelper {
          .buildSnippet();
 
      public static final RenderLayer DEBUG_LINES = IRenderLayer.of(
-             "bbor_lines", DEFAULT_SIZE, false,  false,
+             "bbor_lines", DEFAULT_SIZE, false, false,
              IRenderPipelines.register(
                      RenderPipeline.builder(SNIPPET).withLocation(Identifier.of("bbor", "lines"))
                              .withVertexFormat(VertexFormats.POSITION_COLOR, VertexFormat.DrawMode.DEBUG_LINES)
                              .build()
              ),
-             builder(builder(RenderLayer.MultiPhaseParameters.builder())
-                     .lineWidth0(new RenderPhase.LineWidth(OptionalDouble.of(1.0))))
-                     .build0(false)
+             RenderLayer.MultiPhaseParameters.builder()
+                     .lineWidth(IRenderPhase.FULL_LINE_WIDTH())
+                     .build(false)
      );
 
-     public static final RenderLayer DEBUG_LINES_NO_DEPTH_TEST = IRenderLayer.of(
+    public static final RenderLayer DEBUG_LINES_NO_DEPTH_TEST = IRenderLayer.of(
              "bbor_lines_no_depth_test", DEFAULT_SIZE, false, false,
              IRenderPipelines.register(
                      RenderPipeline.builder(SNIPPET).withLocation(Identifier.of("bbor", "lines_no_depth_test"))
@@ -58,9 +58,9 @@ public class RenderHelper {
                              .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
                              .build()
              ),
-             builder(builder(RenderLayer.MultiPhaseParameters.builder())
-                     .lineWidth0(new RenderPhase.LineWidth(OptionalDouble.of(1.0))))
-                     .build0(false)
+             RenderLayer.MultiPhaseParameters.builder()
+                     .lineWidth(IRenderPhase.FULL_LINE_WIDTH())
+                     .build(false)
      );
 
 
@@ -69,11 +69,12 @@ public class RenderHelper {
             IRenderPipelines.register(
                     RenderPipeline.builder(SNIPPET).withLocation(Identifier.of("bbor", "quads"))
                             .withVertexFormat(VertexFormats.POSITION_COLOR, VertexFormat.DrawMode.QUADS)
+                            .withDepthWrite(false)
                             .build()
             ),
-            builder(builder(RenderLayer.MultiPhaseParameters.builder())
-                    .target0(IRenderPhase.TRANSLUCENT_TARGET()))
-                    .build0(false)
+            RenderLayer.MultiPhaseParameters.builder()
+                    .target(IRenderPhase.TRANSLUCENT_TARGET())
+                    .build(false)
     );
 
     public static final RenderLayer DEBUG_QUADS_NO_DEPTH_TEST = IRenderLayer.of(
@@ -82,9 +83,12 @@ public class RenderHelper {
                     RenderPipeline.builder(SNIPPET).withLocation(Identifier.of("bbor", "quads_no_depth_test"))
                             .withVertexFormat(VertexFormats.POSITION_COLOR, VertexFormat.DrawMode.QUADS)
                             .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+                            .withDepthWrite(false)
                             .build()
             ),
-            builder(RenderLayer.MultiPhaseParameters.builder()).build0(false)
+            RenderLayer.MultiPhaseParameters.builder()
+                    .target(IRenderPhase.TRANSLUCENT_TARGET())
+                    .build(false)
     );
 
     public static final List<RenderLayer> LAYER_LIST = List.of(
@@ -100,10 +104,6 @@ public class RenderHelper {
 
     public static RenderLayer getDebugQuads() {
         return ConfigManager.alwaysVisible.get() ? DEBUG_QUADS_NO_DEPTH_TEST : DEBUG_QUADS;
-    }
-
-    private static IMultiPhaseParametersBuilder builder(RenderLayer.MultiPhaseParameters.Builder builder) {
-        return (IMultiPhaseParametersBuilder) builder;
     }
 
     public static GpuBuffer createBuffer(RenderLayer layer, int size) {
@@ -124,7 +124,8 @@ public class RenderHelper {
     }
 
     public static final class RenderLayerHelper implements Closeable {
-        private final RenderLayer layer;
+        private final Supplier<RenderLayer> layer;
+        private RenderLayer currentLayer;
         private GpuBuffer vertexBuffer;
         private GpuBuffer indexBuffer;
         private VertexFormat.IndexType indexType;
@@ -133,25 +134,18 @@ public class RenderHelper {
         private boolean uploaded = false;
         private boolean shouldIndexBufferClose = false;
 
-        public RenderLayerHelper(
-                RenderLayer layer,
-                GpuBuffer vertexBuffer,
-                GpuBuffer indexBuffer
-        ) {
+        public RenderLayerHelper(Supplier<RenderLayer> layer) {
             this.layer = layer;
-            this.vertexBuffer = vertexBuffer;
-            this.indexBuffer = indexBuffer;
-        }
-
-        public RenderLayerHelper(RenderLayer layer) {
-            this(layer, null, null);
+            this.currentLayer = layer.get();
         }
 
         public void upload(final BuiltBuffer buffer) {
             RenderSystem.assertOnRenderThread();
+            RenderLayer layer = this.layer.get();
+            if (layer != this.currentLayer) this.close();
+            this.currentLayer = layer;
 
             BuiltBuffer.DrawParameters param = buffer.getDrawParameters();
-//            buffer.sortQuads()
 
             ByteBuffer vertexBuffer = buffer.getBuffer();
             if (this.vertexBuffer == null || this.vertexBuffer.size() < vertexBuffer.remaining()) {
@@ -190,9 +184,9 @@ public class RenderHelper {
             RenderSystem.assertOnRenderThread();
             if (!uploaded) throw new IllegalStateException("Not uploaded");
 
-            layer.startDrawing();
+            currentLayer.startDrawing();
 
-            Framebuffer framebuffer = layer.getTarget();
+            Framebuffer framebuffer = currentLayer.getTarget();
 
             try (RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(
                     framebuffer.getColorAttachment(),
@@ -200,7 +194,7 @@ public class RenderHelper {
                     framebuffer.useDepthAttachment ? framebuffer.getDepthAttachment() : null,
                     OptionalDouble.empty()
             )) {
-                pass.setPipeline(layer.getPipeline());
+                pass.setPipeline(currentLayer.getPipeline());
                 pass.setVertexBuffer(0, vertexBuffer);
 
                 if (RenderSystem.SCISSOR_STATE.isEnabled()) {
@@ -218,7 +212,7 @@ public class RenderHelper {
                 pass.drawIndexed(0, indexCount);
             }
 
-            layer.endDrawing();
+            currentLayer.endDrawing();
         }
 
         public void clear() {
@@ -239,7 +233,7 @@ public class RenderHelper {
         }
 
         public RenderLayer getLayer() {
-            return layer;
+            return currentLayer;
         }
 
         public String debugString() {

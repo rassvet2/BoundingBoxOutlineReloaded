@@ -8,11 +8,6 @@ import org.spongepowered.asm.mixin.gen.Invoker;
 @Mixin(RenderLayer.class)
 public interface IRenderLayer {
     @Invoker("of")
-    static RenderLayer.MultiPhase of(String name, int size, RenderPipeline pipeline, RenderLayer.MultiPhaseParameters params) {
-        throw new AssertionError();
-    }
-
-    @Invoker("of")
     static RenderLayer.MultiPhase of(
             String name, int size, boolean hasCrumbling, boolean translucent, RenderPipeline pipeline, RenderLayer.MultiPhaseParameters params
     ) {

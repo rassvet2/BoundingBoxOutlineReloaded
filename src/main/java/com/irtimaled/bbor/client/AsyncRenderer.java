@@ -1,5 +1,6 @@
 package com.irtimaled.bbor.client;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.Queues;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.irtimaled.bbor.client.config.ConfigManager;
@@ -44,16 +45,15 @@ public class AsyncRenderer {
         queue.add(new RenderingContext());
         queue.add(new RenderingContext());
     });
-    private static long lastBuildTime = System.currentTimeMillis();
+    private static long lastBuildTime = 0;
     private static final AtomicLong lastDurationNanos = new AtomicLong(0L);
     private static final Queue<AbstractBoundingBox> syncRenders = Queues.newConcurrentLinkedQueue();
     private static final AtomicInteger runningBuilds = new AtomicInteger();
 
     private static boolean lastActive = false;
     private static DimensionId lastDimID = null;
-    private static boolean lastAlwaysVisible = ConfigManager.alwaysVisible.get();
 
-    static void render(DimensionId dimensionId) {
+    public static void render(DimensionId dimensionId) {
         runCleanup(dimensionId);
         if (!ClientRenderer.getActive()) return;
 
@@ -75,6 +75,10 @@ public class AsyncRenderer {
         lastDurationNanos.set(System.nanoTime() - startTime);
     }
 
+    public static void requestRebuild() {
+        lastBuildTime = 0;
+    }
+
     private static void draw(RenderingContext ctx) {
         var stack = RenderSystem.getModelViewStack().pushMatrix();
         stack.translate((float) -Camera.getX(), (float) -Camera.getY(), (float) -Camera.getZ());
@@ -86,7 +90,7 @@ public class AsyncRenderer {
     }
 
     private static void startAsyncBuild(DimensionId dimensionId) {
-        if (lastBuildTime + 1000 >= System.currentTimeMillis()) {
+        if (System.currentTimeMillis() - lastBuildTime <= ConfigManager.asyncRebuildInterval.get()) {
             return;
         }
 
@@ -95,20 +99,16 @@ public class AsyncRenderer {
         if (ctx0 == null) return;
         RenderingContext ctx = ctx0;
 
-        buildingContexts.add(ctx);
         lastBuildTime = System.currentTimeMillis();
         CompletableFuture
                 .runAsync(() -> {
                     try {
+                        buildingContexts.add(ctx);
                         build0(dimensionId, ctx);
                     } finally {
                         buildingContexts.remove(ctx);
-                        if (ClientRenderer.getActive() && ConfigManager.asyncBuilding.get()) {
-                            transferContexts(activeContexts, contextPool, null);
-                            activeContexts.add(ctx);
-                        } else {
-                            dirtyContexts.add(ctx);
-                        }
+                        transferContexts(activeContexts, contextPool, null);
+                        activeContexts.add(ctx);
                     }
                 }, EXECUTOR)
                 .exceptionallyAsync(throwable -> {
@@ -127,14 +127,6 @@ public class AsyncRenderer {
         }
         lastDimID = dimensionId;
 
-        // if rendering mode changes: discard builds & reset contexts
-        boolean alwaysVisible = ConfigManager.alwaysVisible.get();
-        if (alwaysVisible != lastAlwaysVisible) {
-            transferContexts(activeContexts, dirtyContexts, null);
-            SYNC_CONTEXT.hardReset();
-        }
-        lastAlwaysVisible = alwaysVisible;
-
         // if async building disabled: discard async builds & reset contexts
         if (!ConfigManager.asyncBuilding.get()) {
             transferContexts(activeContexts, dirtyContexts, null);
@@ -142,11 +134,15 @@ public class AsyncRenderer {
 
         // if rendering disabled: discard async & sync builds
         if (!ClientRenderer.getActive() && lastActive) {
-            lastActive = false;
             SYNC_CONTEXT.hardReset();
-
             transferContexts(activeContexts, dirtyContexts, null);
+            transferContexts(contextPool, dirtyContexts, null);
         }
+        // if rendering enabled: render now
+        if (ClientRenderer.getActive() && !lastActive) {
+            requestRebuild();
+        }
+        lastActive = ClientRenderer.getActive();
 
         // reset dirty contexts
         transferContexts(dirtyContexts, contextPool, RenderingContext::hardReset);
@@ -154,8 +150,6 @@ public class AsyncRenderer {
         if (!ClientRenderer.getActive() && runningBuilds.get() == 0) {
             ClientRenderer.doCleanup();
         }
-
-        lastActive = true;
     }
 
     private static void build0(DimensionId dimensionId, RenderingContext ctx) {
@@ -186,6 +180,8 @@ public class AsyncRenderer {
     }
 
     private static void buildSyncRenders() {
+        if (syncRenders.isEmpty()) return;
+
         AsyncRenderer.SYNC_CONTEXT.reset();
         AsyncRenderer.SYNC_CONTEXT.beginBatch();
 
@@ -211,6 +207,8 @@ public class AsyncRenderer {
             Queue<RenderingContext> dest,
             @Nullable Consumer<RenderingContext> action) {
 
+        Preconditions.checkArgument(src != dest, "src and dest must be different");
+
         RenderingContext ctx;
         while ((ctx = src.poll()) != null) {
             try {
@@ -222,12 +220,13 @@ public class AsyncRenderer {
     }
 
     public static List<String> renderingDebugStrings() {
-
         List<String> msg = Lists.newArrayList();
-        if (ConfigManager.asyncBuilding.get() && activeContexts.isEmpty()) {
-            msg.add("[BBOR] Preparing rendering...");
+        if (ClientRenderer.getActive()) {
+            if (ConfigManager.asyncBuilding.get() && activeContexts.isEmpty()) {
+                msg.add("[BBOR] Preparing rendering...");
+            }
         }
-        if (ConfigManager.asyncBuilding.get()) {
+        if (!activeContexts.isEmpty() || !buildingContexts.isEmpty() || !dirtyContexts.isEmpty()) {
             for (RenderingContext ctx : activeContexts) {
                 msg.add("[BBOR] Active: " + ctx.debugString());
                 msg.add("[BBOR] Active: " + ctx.debugMemoryString());
@@ -245,9 +244,10 @@ public class AsyncRenderer {
                 msg.add("[BBOR] Pool: " + ctx.debugMemoryString());
             }
         }
-        msg.add("[BBOR] Sync: " + SYNC_CONTEXT.debugString());
-        msg.add("[BBOR] Sync: " + SYNC_CONTEXT.debugMemoryString());
-        ConfigManager.alwaysVisible.set(false);
+        if (ClientRenderer.getActive()) {
+            msg.add("[BBOR] Sync: " + SYNC_CONTEXT.debugString());
+            msg.add("[BBOR] Sync: " + SYNC_CONTEXT.debugMemoryString());
+        }
         return msg;
     }
 }

@@ -34,7 +34,15 @@ public class ClientProxy extends CommonProxy {
         mainKey.register("key.keyboard.g")
                 .onKeyPressHandler(SettingsScreen::show);
         mainKey.register("key.keyboard.o")
-                .onKeyPressHandler(() -> ConfigManager.Toggle(ConfigManager.outerBoxesOnly));
+                .onKeyPressHandler(() -> {
+                    ConfigManager.Toggle(ConfigManager.outerBoxesOnly);
+                    AsyncRenderer.requestRebuild();
+                });
+        mainKey.register("key.keyboard.p")
+                .onKeyPressHandler(() -> {
+                    ConfigManager.Toggle(ConfigManager.alwaysVisible);
+                    AsyncRenderer.requestRebuild();
+                });
         mainKey.register("key.keyboard.l")
                 .onKeyPressHandler(LoadSavesScreen::show);
     }
