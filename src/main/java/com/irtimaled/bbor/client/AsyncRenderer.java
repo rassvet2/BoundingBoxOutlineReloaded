@@ -12,6 +12,9 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.Text;
 import net.minecraft.text.TextColor;
 import net.minecraft.util.Formatting;
+import net.minecraft.util.Util;
+import org.apache.commons.compress.utils.Lists;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,6 +25,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 
 public class AsyncRenderer {
 
@@ -33,76 +37,38 @@ public class AsyncRenderer {
 
     private static final RenderingContext SYNC_CONTEXT = new RenderingContext();
 
-    private static final RenderingContext[] asyncContexts = new RenderingContext[] {
-            new RenderingContext(),
-            new RenderingContext(),
-    };
-    private static int currentAsyncContext = -1;
-    private static CompletableFuture<Void> buildingFuture = null;
-    private static boolean lastActive = false;
-    private static boolean toDiscardBuild = false;
+    private static final Queue<RenderingContext> activeContexts = Queues.newConcurrentLinkedQueue();
+    private static final Queue<RenderingContext> buildingContexts = Queues.newConcurrentLinkedQueue();
+    private static final Queue<RenderingContext> dirtyContexts = Queues.newConcurrentLinkedQueue();
+    private static final Queue<RenderingContext> contextPool = Util.make(Queues.newConcurrentLinkedQueue(), (queue) -> {
+        queue.add(new RenderingContext());
+        queue.add(new RenderingContext());
+    });
     private static long lastBuildTime = System.currentTimeMillis();
-    private static AtomicLong lastDurationNanos = new AtomicLong(0L);
-    private static DimensionId lastDimID = null;
-    private static RenderingContext lastCtx;
+    private static final AtomicLong lastDurationNanos = new AtomicLong(0L);
     private static final Queue<AbstractBoundingBox> syncRenders = Queues.newConcurrentLinkedQueue();
     private static final AtomicInteger runningBuilds = new AtomicInteger();
 
+    private static boolean lastActive = false;
+    private static DimensionId lastDimID = null;
+    private static boolean lastAlwaysVisible = ConfigManager.alwaysVisible.get();
+
     static void render(DimensionId dimensionId) {
-        runCleanup();
-
-        if (!ClientRenderer.getActive()) {
-            if (lastActive) {
-                lastActive = false;
-                SYNC_CONTEXT.hardReset();
-                // invalidate async things
-                if (buildingFuture != null || currentAsyncContext != -1) {
-                    currentAsyncContext = -1;
-                    toDiscardBuild = true;
-                }
-                if (buildingFuture == null) {
-                    for (RenderingContext context : asyncContexts) {
-                        context.hardReset();
-                    }
-                }
-            }
-            if (runningBuilds.get() == 0) {
-                ClientRenderer.doCleanup();
-            }
-            return;
-        }
-
-        lastActive = true;
+        runCleanup(dimensionId);
+        if (!ClientRenderer.getActive()) return;
 
         long startTime = System.nanoTime();
 
-        final Boolean useAsync = ConfigManager.asyncBuilding.get();
-        if (useAsync) {
-            final int i = getNextAsyncContext(dimensionId);
-            if (i != -1) {
-                final RenderingContext ctx = asyncContexts[i];
+        if (ConfigManager.asyncBuilding.get()) {
+            startAsyncBuild(dimensionId);
 
-                draw(ctx);
-                buildSyncRenders();
-                draw(SYNC_CONTEXT);
-
-                lastCtx = ctx;
-            } else {
-                lastCtx = null;
-            }
+            for (RenderingContext ctx : activeContexts) draw(ctx);
+            buildSyncRenders();
+            draw(SYNC_CONTEXT);
         } else {
-            // invalidate async things
-            currentAsyncContext = -1;
-            toDiscardBuild = true;
-
-            final RenderingContext ctx = SYNC_CONTEXT;
-
-
-            build0(dimensionId, ctx);
-            draw(ctx);
+            build0(dimensionId, SYNC_CONTEXT);
+            draw(SYNC_CONTEXT);
             RenderCulling.flushRendering();
-
-            lastCtx = ctx;
         }
 
         RenderingContext.handleRenderTask();
@@ -111,33 +77,40 @@ public class AsyncRenderer {
 
     private static void draw(RenderingContext ctx) {
         var stack = RenderSystem.getModelViewStack().pushMatrix();
+        stack.translate((float) -Camera.getX(), (float) -Camera.getY(), (float) -Camera.getZ());
         RenderSystem.backupProjectionMatrix();
         RenderSystem.getProjectionMatrix().translate(0.0f, 0.0f, 0.01f);
-        stack.translate(
-                (float) -Camera.getX(),
-                (float) -Camera.getY(),
-                (float) -Camera.getZ()
-        );
         ctx.doDrawing();
         stack.popMatrix();
         RenderSystem.backupProjectionMatrix();
     }
 
-    private static int getNextAsyncContext(DimensionId dimensionId) {
-        if (dimensionId != lastDimID) {
-            currentAsyncContext = -1;
-            lastDimID = dimensionId;
-            toDiscardBuild = true;
-        }
-        if ((buildingFuture != null && !buildingFuture.isDone()) || lastBuildTime + 2000 >= System.currentTimeMillis()) {
-            return currentAsyncContext;
+    private static void startAsyncBuild(DimensionId dimensionId) {
+        if (lastBuildTime + 1000 >= System.currentTimeMillis()) {
+            return;
         }
 
+        RenderingContext ctx0 = contextPool.poll();
+        if (ctx0 == null && activeContexts.size() > 1) ctx0 = activeContexts.poll();
+        if (ctx0 == null) return;
+        RenderingContext ctx = ctx0;
+
+        buildingContexts.add(ctx);
         lastBuildTime = System.currentTimeMillis();
-
-        RenderingContext ctx = asyncContexts[(currentAsyncContext + 1) % asyncContexts.length];
-        buildingFuture = CompletableFuture
-                .runAsync(() -> build0(dimensionId, ctx), EXECUTOR)
+        CompletableFuture
+                .runAsync(() -> {
+                    try {
+                        build0(dimensionId, ctx);
+                    } finally {
+                        buildingContexts.remove(ctx);
+                        if (ClientRenderer.getActive() && ConfigManager.asyncBuilding.get()) {
+                            transferContexts(activeContexts, contextPool, null);
+                            activeContexts.add(ctx);
+                        } else {
+                            dirtyContexts.add(ctx);
+                        }
+                    }
+                }, EXECUTOR)
                 .exceptionallyAsync(throwable -> {
                     LOGGER.error("Error occurred while building buffers async", throwable);
                     MinecraftClient.getInstance().inGameHud.getChatHud().addMessage(
@@ -145,18 +118,44 @@ public class AsyncRenderer {
                                     .copy().styled(style -> style.withBold(true).withColor(TextColor.fromFormatting(Formatting.RED))));
                     return null;
                 }, MinecraftClient.getInstance());
-        return currentAsyncContext;
     }
 
-    private static void runCleanup() {
-        if (buildingFuture != null && buildingFuture.isDone()) {
-            if (!toDiscardBuild) {
-                currentAsyncContext = (currentAsyncContext + 1) % asyncContexts.length;
-            } else {
-                toDiscardBuild = false;
-            }
-            buildingFuture = null;
+    private static void runCleanup(DimensionId dimensionId) {
+        // if dimension changes: discard builds
+        if (dimensionId != lastDimID) {
+            transferContexts(activeContexts, contextPool, null);
         }
+        lastDimID = dimensionId;
+
+        // if rendering mode changes: discard builds & reset contexts
+        boolean alwaysVisible = ConfigManager.alwaysVisible.get();
+        if (alwaysVisible != lastAlwaysVisible) {
+            transferContexts(activeContexts, dirtyContexts, null);
+            SYNC_CONTEXT.hardReset();
+        }
+        lastAlwaysVisible = alwaysVisible;
+
+        // if async building disabled: discard async builds & reset contexts
+        if (!ConfigManager.asyncBuilding.get()) {
+            transferContexts(activeContexts, dirtyContexts, null);
+        }
+
+        // if rendering disabled: discard async & sync builds
+        if (!ClientRenderer.getActive() && lastActive) {
+            lastActive = false;
+            SYNC_CONTEXT.hardReset();
+
+            transferContexts(activeContexts, dirtyContexts, null);
+        }
+
+        // reset dirty contexts
+        transferContexts(dirtyContexts, contextPool, RenderingContext::hardReset);
+
+        if (!ClientRenderer.getActive() && runningBuilds.get() == 0) {
+            ClientRenderer.doCleanup();
+        }
+
+        lastActive = true;
     }
 
     private static void build0(DimensionId dimensionId, RenderingContext ctx) {
@@ -166,13 +165,10 @@ public class AsyncRenderer {
 
         try {
             final List<AbstractBoundingBox> boundingBoxes = ClientRenderer.getBoundingBoxes(dimensionId);
-            final List<AbstractBoundingBox> syncs = new ObjectArrayList<>();
             RenderCulling.flushPreRendering();
             for (AbstractBoundingBox key : boundingBoxes) {
                 AbstractRenderer renderer = key.getRenderer();
                 if (renderer == null) continue;
-
-                profiler.push(renderer.getClass().getSimpleName());
 
                 renderer.render(ctx, key);
                 if (key.needSyncRendering()) {
@@ -210,20 +206,48 @@ public class AsyncRenderer {
         return lastDurationNanos.get();
     }
 
-    public static List<String> renderingDebugStrings() {
-        final RenderingContext ctx = lastCtx;
-        if (ctx == null) {
-            return List.of("[BBOR] Preparing rendering...");
-        } else {
-            if (currentAsyncContext != -1) {
-                return List.of(
-                        "[BBOR] Async" + (currentAsyncContext == 0 ? "*" : " ") + ": " + asyncContexts[0].debugString(),
-                        "[BBOR] Async" + (currentAsyncContext == 1 ? "*" : " ") + ": " + asyncContexts[1].debugString(),
-                        "[BBOR] Sync: " + SYNC_CONTEXT.debugString()
-                );
-            } else {
-                return List.of("[BBOR] " + ctx.debugString());
+    private static void transferContexts(
+            Queue<RenderingContext> src,
+            Queue<RenderingContext> dest,
+            @Nullable Consumer<RenderingContext> action) {
+
+        RenderingContext ctx;
+        while ((ctx = src.poll()) != null) {
+            try {
+                if (action != null) action.accept(ctx);
+            } finally {
+                dest.add(ctx);
             }
         }
+    }
+
+    public static List<String> renderingDebugStrings() {
+
+        List<String> msg = Lists.newArrayList();
+        if (ConfigManager.asyncBuilding.get() && activeContexts.isEmpty()) {
+            msg.add("[BBOR] Preparing rendering...");
+        }
+        if (ConfigManager.asyncBuilding.get()) {
+            for (RenderingContext ctx : activeContexts) {
+                msg.add("[BBOR] Active: " + ctx.debugString());
+                msg.add("[BBOR] Active: " + ctx.debugMemoryString());
+            }
+            for (RenderingContext ctx : buildingContexts) {
+                msg.add("[BBOR] Build: " + ctx.debugString());
+                msg.add("[BBOR] Build: " + ctx.debugMemoryString());
+            }
+            for (RenderingContext ctx : dirtyContexts) {
+                msg.add("[BBOR] Dirty: " + ctx.debugString());
+                msg.add("[BBOR] Dirty: " + ctx.debugMemoryString());
+            }
+            for (RenderingContext ctx : contextPool) {
+                msg.add("[BBOR] Pool: " + ctx.debugString());
+                msg.add("[BBOR] Pool: " + ctx.debugMemoryString());
+            }
+        }
+        msg.add("[BBOR] Sync: " + SYNC_CONTEXT.debugString());
+        msg.add("[BBOR] Sync: " + SYNC_CONTEXT.debugMemoryString());
+        ConfigManager.alwaysVisible.set(false);
+        return msg;
     }
 }

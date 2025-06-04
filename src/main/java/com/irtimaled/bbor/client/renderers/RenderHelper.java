@@ -21,6 +21,7 @@ import net.minecraft.client.render.*;
 import net.minecraft.client.util.BufferAllocator;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.Util;
+import org.apache.commons.io.FileUtils;
 
 import java.io.Closeable;
 import java.nio.ByteBuffer;
@@ -228,7 +229,6 @@ public class RenderHelper {
             return uploaded;
         }
 
-
         @Override
         public void close() {
             if (this.vertexBuffer != null) this.vertexBuffer.close();
@@ -236,6 +236,18 @@ public class RenderHelper {
             clear();
             vertexBuffer = null;
             indexBuffer = null;
+        }
+
+        public RenderLayer getLayer() {
+            return layer;
+        }
+
+        public String debugString() {
+            if (this.vertexBuffer == null && this.indexBuffer == null && this.indexCount == 0) return "unallocated";
+            return String.format("VB: %s, IB: %s, C: %d",
+                    (this.vertexBuffer != null ? FileUtils.byteCountToDisplaySize(this.vertexBuffer.size()) : "null"),
+                    (this.indexBuffer != null ? FileUtils.byteCountToDisplaySize(this.indexBuffer.size()) : "null"),
+                    this.indexCount);
         }
     }
 

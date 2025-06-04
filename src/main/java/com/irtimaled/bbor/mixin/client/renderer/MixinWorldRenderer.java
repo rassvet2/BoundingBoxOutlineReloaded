@@ -27,13 +27,12 @@ public class MixinWorldRenderer {
 
     @Inject(method = "method_62214", at = @At(value = "INVOKE_STRING", target = "Lnet/minecraft/util/profiler/Profiler;swap(Ljava/lang/String;)V", args = "ldc=blockentities"))
     private void onRender(Fog fog, RenderTickCounter renderTickCounter, Camera camera, Profiler profiler, Matrix4f positionMatrix, Matrix4f projectionMatrix, Handle<Framebuffer> mainFramebuffer, Handle<Framebuffer> translucentFramebuffer, boolean renderBlockOutline, Frustum frustum, Handle<Framebuffer> itemEntityFramebuffer, Handle<Framebuffer> entityOutlineFramebuffer, CallbackInfo ci, @Local float f) {
-        profiler.push("bbor-mixin");
+        profiler.swap("bbor-mixin");
         Preconditions.checkNotNull(this.client.player);
         RenderCulling.setFrustum(frustum);
         Player.setPosition(f, this.client.player);
 
         ClientInterop.render(this.client.player);
-        profiler.pop();
     }
 
 }

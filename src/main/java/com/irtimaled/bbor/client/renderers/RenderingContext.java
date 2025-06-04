@@ -19,12 +19,15 @@ import java.util.concurrent.CompletableFuture;
 
 import net.minecraft.util.math.ColorHelper;
 import org.joml.Vector3f;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Intended to be reused. This class is not thread-safe.
  */
 public class RenderingContext {
 
+    private static final Logger log = LoggerFactory.getLogger(RenderingContext.class);
     private final RenderHelper.Allocators allocators = new RenderHelper.Allocators();
 
     private BufferBuilder quadBufferBuilderNonMasked;
@@ -67,9 +70,10 @@ public class RenderingContext {
 
     public void beginBatch() {
         lastBuildStartTime = System.nanoTime();
-        quadBufferBuilderMasked = allocators.getBufferBuilder(RenderHelper.DEBUG_QUADS);
-        quadBufferBuilderNonMasked = allocators.getBufferBuilder(RenderHelper.DEBUG_QUADS);
-        lineBufferBuilder = allocators.getBufferBuilder(RenderHelper.DEBUG_LINES);
+        quadBufferBuilderMasked = allocators.getBufferBuilder(maskedQuadRenderInfo.getLayer());
+        quadBufferBuilderNonMasked = allocators.getBufferBuilder(quadRenderInfo.getLayer());
+        lineBufferBuilder = allocators.getBufferBuilder(lineRenderInfo.getLayer());
+        batchId++;
     }
 
     public void drawSolidBox(Box box, Color color, int alpha, boolean mask) {
@@ -183,25 +187,34 @@ public class RenderingContext {
 
     public void doDrawing() {
         RenderSystem.assertOnRenderThread();
-        handleRenderTask();
-
         long startTime = System.nanoTime();
+        handleRenderTask();
 
         try {
             if (lineRenderInfo.isUploaded()) lineRenderInfo.draw();
             if (quadRenderInfo.isUploaded()) quadRenderInfo.draw();
             if (maskedQuadRenderInfo.isUploaded()) maskedQuadRenderInfo.draw();
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Error while drawing", e);
         }
 
         this.lastRenderDurationNanos = System.nanoTime() - startTime;
     }
 
+    private static int INSTANCE_COUNT = 0;
+    private final int instanceId = INSTANCE_COUNT++;
+    private int batchId = 0;
     public String debugString() {
-        return String.format("Faces: %d+%d Lines: %d @ (%.2fms Build, %.2fms Draw)",
-                quadMaskedCount, quadNonMaskedCount, lineCount,
+        return String.format("[%d#%d] F: %d+%d L: %d @ (%.2fms Build, %.2fms Draw)",
+                instanceId, batchId, quadMaskedCount, quadNonMaskedCount, lineCount,
                 lastBuildDurationNanos / 1_000_000.0, lastRenderDurationNanos / 1_000_000.0);
+    }
+    public String debugMemoryString() {
+        return String.format("[%d#%d] %s / %s / %s",
+                instanceId, batchId,
+                maskedQuadRenderInfo.debugString(),
+                quadRenderInfo.debugString(),
+                lineRenderInfo.debugString());
     }
 
     public void postRenderTask(Runnable task) {
